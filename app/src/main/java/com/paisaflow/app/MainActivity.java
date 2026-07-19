@@ -79,12 +79,6 @@ public final class MainActivity extends Activity {
     private TextView expenseValue;
     private TextView investmentValue;
     private TextView creditValue;
-    private TextView expensePercent;
-    private TextView investmentPercent;
-    private TextView creditPercent;
-    private View expenseBar;
-    private View investmentBar;
-    private View creditBar;
     private TextView transactionHeading;
     private TextView emptyView;
     private EntryAdapter entryAdapter;
@@ -199,11 +193,10 @@ public final class MainActivity extends Activity {
 
         LinearLayout periodControl = row(this);
         periodControl.setGravity(Gravity.CENTER_VERTICAL);
-        periodControl.setPadding(dp(13), dp(5), dp(10), dp(5));
-        periodControl.setBackground(roundRect(WHITE, dp(13), 0xFFDDE1D9, dp(1)));
+        periodControl.setPadding(dp(2), dp(5), 0, dp(5));
         periodControl.setOnClickListener(v -> showPeriodSelector());
-        TextView calendarMark = text("▣", 18, EMERALD, Typeface.BOLD);
-        calendarMark.setGravity(Gravity.CENTER);
+        CalendarIconView calendarMark = new CalendarIconView(this);
+        calendarMark.setContentDescription("Date filter calendar");
         periodControl.addView(calendarMark, size(dp(32), dp(40)));
         LinearLayout periodText = column(this);
         periodText.setPadding(dp(8), 0, 0, 0);
@@ -224,25 +217,16 @@ public final class MainActivity extends Activity {
         periodText.addView(periodButton, new LinearLayout.LayoutParams(-1, dp(27)));
         periodText.addView(dateLabel, new LinearLayout.LayoutParams(-1, dp(19)));
         periodControl.addView(periodText, weighted());
-        TextView chevron = text("›", 24, MUTED, Typeface.NORMAL);
-        chevron.setGravity(Gravity.CENTER);
-        periodControl.addView(chevron, size(dp(26), dp(46)));
         content.addView(periodControl, new LinearLayout.LayoutParams(-1, dp(58)));
 
         summaryPanel = column(this);
         summaryPanel.setPadding(0, dp(8), 0, 0);
         SummaryRow credits = addSummaryRow(summaryPanel, "Credits", EMERALD);
         creditValue = credits.value;
-        creditPercent = credits.percentage;
-        creditBar = credits.fill;
         SummaryRow expenses = addSummaryRow(summaryPanel, "Expenses", DANGER);
         expenseValue = expenses.value;
-        expensePercent = expenses.percentage;
-        expenseBar = expenses.fill;
         SummaryRow investments = addSummaryRow(summaryPanel, "Investments", AMBER);
         investmentValue = investments.value;
-        investmentPercent = investments.percentage;
-        investmentBar = investments.fill;
         content.addView(summaryPanel, matchWrap());
 
         donutPanel = column(this);
@@ -611,27 +595,12 @@ public final class MainActivity extends Activity {
         value.setSingleLine(true);
         value.setGravity(Gravity.END);
         values.addView(value, wrap());
-        TextView percentage = text("—", 13, MUTED, Typeface.BOLD);
-        percentage.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        percentage.setPadding(dp(8), 0, 0, 0);
-        values.addView(percentage, new LinearLayout.LayoutParams(dp(66), dp(32)));
         card.addView(values, new LinearLayout.LayoutParams(-1, dp(34)));
 
-        FrameLayout track = new FrameLayout(this);
-        track.setBackground(roundRect(0xFFE6E9E3, dp(2)));
-        View fill = new View(this);
-        fill.setPivotX(0);
-        fill.setScaleX(0f);
-        fill.setBackground(roundRect(accent, dp(2)));
-        track.addView(fill, frameMatch());
-        LinearLayout.LayoutParams trackParams = new LinearLayout.LayoutParams(-1, dp(4));
-        trackParams.setMargins(0, dp(4), 0, 0);
-        card.addView(track, trackParams);
-
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(62));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(52));
         params.setMargins(0, 0, 0, dp(7));
         parent.addView(card, params);
-        return new SummaryRow(value, percentage, fill);
+        return new SummaryRow(value);
     }
 
     private void showPeriodSelector() {
@@ -721,9 +690,6 @@ public final class MainActivity extends Activity {
         expenseValue.setText(Money.format(snapshot.summary.expenses));
         investmentValue.setText(Money.format(snapshot.summary.investments));
         creditValue.setText(Money.format(snapshot.summary.credits));
-        updateAllocation(creditPercent, creditBar, snapshot.summary.credits, snapshot.summary.credits);
-        updateAllocation(expensePercent, expenseBar, snapshot.summary.expenses, snapshot.summary.credits);
-        updateAllocation(investmentPercent, investmentBar, snapshot.summary.investments, snapshot.summary.credits);
         entryAdapter.replace(snapshot.entries);
         if (totalsFlow.equals(breakdownFlow)) {
             categoryTotalAdapter.replace(totals);
@@ -739,22 +705,6 @@ public final class MainActivity extends Activity {
             emptyView.setText("No transactions in this period\nTap Add transaction to begin");
             emptyView.setVisibility(snapshot.entries.isEmpty() ? View.VISIBLE : View.GONE);
         }
-    }
-
-    private void updateAllocation(TextView percentage, View bar, long amount, long credits) {
-        if (credits <= 0) {
-            percentage.setText("—");
-            bar.setScaleX(0f);
-            return;
-        }
-        double ratio = amount / (double) credits;
-        double value = ratio * 100.0;
-        if (Math.abs(value - Math.rint(value)) < 0.05) {
-            percentage.setText(String.format(java.util.Locale.getDefault(), "%.0f%%", value));
-        } else {
-            percentage.setText(String.format(java.util.Locale.getDefault(), "%.1f%%", value));
-        }
-        bar.setScaleX((float) Math.min(1.0, Math.max(0.0, ratio)));
     }
 
     private void showOpeningBalanceDialog(boolean firstPrompt) {
@@ -936,10 +886,10 @@ public final class MainActivity extends Activity {
 
         form.addView(formLabel("ICON"), matchWrap());
         List<String> iconNames = Arrays.asList(
-                "Piggy bank", "Dividend payout", "Growth chart", "Payment card", "Money transfer",
+                "Deposit", "Dividend", "Growth chart", "Payment card", "Money transfer",
                 "Home", "Food", "Transport", "Health", "Shopping", "Receipt", "Coin", "Bank");
         List<String> iconKeys = Arrays.asList(
-                "piggy", "dividend", "chart", "card", "send", "home", "food", "car", "health", "bag", "receipt", "coin", "bank");
+                "deposit", "dividend", "chart", "card", "send", "home", "food", "car", "health", "bag", "receipt", "coin", "bank");
         Spinner icon = spinner();
         IconOptionAdapter iconAdapter = new IconOptionAdapter(iconNames, iconKeys, EMERALD);
         icon.setAdapter(iconAdapter);
@@ -1772,13 +1722,9 @@ public final class MainActivity extends Activity {
 
     private static final class SummaryRow {
         final TextView value;
-        final TextView percentage;
-        final View fill;
 
-        SummaryRow(TextView value, TextView percentage, View fill) {
+        SummaryRow(TextView value) {
             this.value = value;
-            this.percentage = percentage;
-            this.fill = fill;
         }
     }
 

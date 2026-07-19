@@ -109,21 +109,16 @@ final class CategoryIconView extends View {
                 path.moveTo(9, 12); path.lineTo(40, 23); path.lineTo(27, 28); path.lineTo(21, 39); path.lineTo(19, 27); path.close(); canvas.drawPath(path, paint); break;
             case "deposit":
             case "piggy":
-                canvas.drawRoundRect(new RectF(11, 18, 35, 35), 8, 8, paint);
-                canvas.drawRoundRect(new RectF(33, 23, 41, 30), 3, 3, paint);
-                path.moveTo(16, 19); path.lineTo(18, 12); path.lineTo(24, 18); canvas.drawPath(path, paint);
-                canvas.drawArc(new RectF(6, 20, 15, 29), 80, 250, false, paint);
-                canvas.drawLine(16, 34, 16, 39, paint); canvas.drawLine(30, 34, 30, 39, paint);
-                canvas.drawLine(23, 18, 30, 18, paint);
-                paint.setStyle(Paint.Style.FILL); canvas.drawCircle(30, 23, 1.5f, paint); paint.setStyle(Paint.Style.STROKE);
-                canvas.drawCircle(27, 9, 4, paint); canvas.drawLine(27, 13, 27, 17, paint);
+                canvas.drawLine(24, 10, 24, 29, paint);
+                canvas.drawLine(17, 22, 24, 29, paint);
+                canvas.drawLine(31, 22, 24, 29, paint);
+                path.moveTo(12, 29); path.lineTo(12, 36); path.lineTo(36, 36); path.lineTo(36, 29);
+                canvas.drawPath(path, paint);
                 break;
             case "dividend":
-                canvas.drawOval(new RectF(10, 27, 31, 36), paint);
-                canvas.drawOval(new RectF(10, 22, 31, 31), paint);
-                canvas.drawOval(new RectF(10, 17, 31, 26), paint);
-                canvas.drawLine(36, 10, 36, 29, paint);
-                canvas.drawLine(31, 24, 36, 29, paint); canvas.drawLine(41, 24, 36, 29, paint);
+                canvas.drawCircle(24, 24, 13, paint);
+                canvas.drawLine(17, 24, 31, 24, paint);
+                canvas.drawLine(24, 17, 24, 31, paint);
                 break;
             case "refund":
                 canvas.drawArc(new RectF(11, 11, 37, 37), 45, 285, false, paint); canvas.drawLine(11, 14, 11, 23, paint); canvas.drawLine(11, 14, 20, 14, paint); break;

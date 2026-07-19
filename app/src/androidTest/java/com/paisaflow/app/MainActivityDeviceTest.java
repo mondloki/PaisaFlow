@@ -35,6 +35,7 @@ public final class MainActivityDeviceTest {
                 assertVisibleText(root, "Credits");
                 assertVisibleText(root, "Expenses");
                 assertVisibleText(root, "Investments");
+                assertVisibleContentDescription(root, "Date filter calendar");
                 assertTrue("A compact period selector should be visible", hasVisibleTextContaining(root, "This ")
                         || hasVisibleTextContaining(root, "Financial year")
                         || hasVisibleTextContaining(root, "Start till now")
@@ -75,7 +76,7 @@ public final class MainActivityDeviceTest {
                 assertVisibleText(root, "ICON");
                 assertVisibleText(root, "COLOR");
                 assertVisibleText(root, "PREVIEW");
-                assertVisibleContentDescription(root, "Piggy bank icon");
+                assertVisibleContentDescription(root, "Deposit icon");
                 assertVisibleContentDescription(root, "Emerald color swatch");
                 assertVisibleContentDescription(root, "Selected category icon preview");
                 dialog.dismiss();
