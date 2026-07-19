@@ -1,0 +1,12 @@
+<resources>
+    <color name="ink">#0B1220</color>
+    <color name="ink_soft">#172033</color>
+    <color name="emerald">#20C997</color>
+    <color name="emerald_dark">#0F9D78</color>
+    <color name="paper">#F6F7F2</color>
+    <color name="white">#FFFFFF</color>
+    <color name="muted">#667085</color>
+    <color name="danger">#E85D68</color>
+    <color name="amber">#F4B740</color>
+</resources>
+

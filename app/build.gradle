@@ -1,0 +1,64 @@
+import com.android.build.api.dsl.ManagedVirtualDevice
+
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.paisaflow.app'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.paisaflow.app'
+        minSdk 23
+        targetSdk 35
+        versionCode 4
+        versionName '1.2.0'
+
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    testOptions {
+        managedDevices {
+            devices {
+                paisaFlowApi35(ManagedVirtualDevice) {
+                    device = 'Pixel 2'
+                    apiLevel = 35
+                    systemImageSource = 'aosp'
+                }
+            }
+        }
+    }
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test:core:1.6.1'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+}
+
+// connected*AndroidTest installs and later uninstalls the app under test. That
+// cleanup is forbidden on a user's phone because uninstalling removes app data.
+tasks.configureEach { task ->
+    if (task.name ==~ /connected.*AndroidTest/) {
+        task.doFirst {
+            throw new GradleException(
+                    'Blocked: connected Android tests can uninstall PaisaFlow and delete user data. ' +
+                    'Use paisaFlowApi35DebugAndroidTest on the managed disposable emulator instead.')
+        }
+    }
+}

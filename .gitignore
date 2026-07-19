@@ -1,0 +1,14 @@
+.gradle/
+.idea/
+local.properties
+**/build/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Codex conversation attachments are local reference material.
+.codex-remote-attachments/
+
+# Publish installable builds through GitHub Releases, not source history.
+dist/*.apk

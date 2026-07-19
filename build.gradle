@@ -1,0 +1,9 @@
+plugins {
+    id 'com.android.application' version '8.7.3' apply false
+}
+
+// OneDrive can lock Gradle's rapidly changing intermediates. Keep disposable
+// build output in the local temp directory while source stays safely synced.
+allprojects {
+    layout.buildDirectory = file("${System.getProperty('java.io.tmpdir')}/PaisaFlow-build/${rootProject.name}/${project.name}")
+}
