@@ -10,6 +10,7 @@ import android.os.SystemClock;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.EditText;
 import android.widget.TextView;
 
 import androidx.test.core.app.ActivityScenario;
@@ -93,16 +94,44 @@ public final class MainActivityDeviceTest {
             scenario.onActivity(activity -> {
                 View root = activity.getWindow().getDecorView();
                 assertVisibleText(root, "Opening balance");
+                assertVisibleText(root, "Backup");
+                ((View) findText(root, "Backup").getParent()).performClick();
+            });
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                assertVisibleText(root, "Backup & data");
                 assertVisibleText(root, "Export");
                 assertVisibleText(root, "Import");
+                assertVisibleText(root, "Erase data");
                 exportDialog.set(activity.showExportOptions());
             });
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             scenario.onActivity(activity -> {
                 View root = exportDialog.get().getWindow().getDecorView();
-                assertTrue(hasVisibleTextContaining(root, "Transactions only"));
-                assertTrue(hasVisibleTextContaining(root, "Full data"));
+                assertVisibleText(root, "Transactions only");
+                assertVisibleText(root, "Full data");
+                assertTrue(hasVisibleTextContaining(root, "selected dashboard date range"));
+                findText(root, "Full data").performClick();
+                assertTrue(hasVisibleTextContaining(root, "password-encrypted"));
                 exportDialog.get().dismiss();
+            });
+        }
+    }
+
+    @Test public void eraseRequiresASeparateTypedConfirmation() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            AtomicReference<AlertDialog> dialogReference = new AtomicReference<>();
+            scenario.onActivity(activity -> dialogReference.set(activity.showFinalEraseConfirmation(true)));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            scenario.onActivity(activity -> {
+                AlertDialog dialog = dialogReference.get();
+                View root = dialog.getWindow().getDecorView();
+                assertTrue(hasVisibleTextContaining(root, "permanently erased"));
+                assertTrue(hasVisibleTextContaining(root, "Type ERASE"));
+                assertFalse(dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).isEnabled());
+                findEditText(root).setText("ERASE");
+                assertTrue(dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).isEnabled());
+                dialog.dismiss();
             });
         }
     }
@@ -171,6 +200,30 @@ public final class MainActivityDeviceTest {
             }
         }
         throw new AssertionError("Missing text: " + expected);
+    }
+
+    private static EditText findEditText(View root) {
+        if (root instanceof EditText) return (EditText) root;
+        if (root instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) root;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                EditText found = findEditTextOrNull(group.getChildAt(i));
+                if (found != null) return found;
+            }
+        }
+        throw new AssertionError("Missing confirmation field");
+    }
+
+    private static EditText findEditTextOrNull(View root) {
+        if (root instanceof EditText) return (EditText) root;
+        if (root instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) root;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                EditText found = findEditTextOrNull(group.getChildAt(i));
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 
     private static TextView findTextContaining(View root, String expected) {

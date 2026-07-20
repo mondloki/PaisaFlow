@@ -250,6 +250,24 @@ final class LedgerDatabase extends SQLiteOpenHelper {
         getWritableDatabase().delete("entries", "id=?", new String[]{Long.toString(id)});
     }
 
+    void eraseTransactions() {
+        getWritableDatabase().delete("entries", null, null);
+    }
+
+    void eraseAllData() {
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            db.delete("entries", null, null);
+            db.delete("categories", null, null);
+            db.delete("app_settings", null, null);
+            seed(db);
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
+    }
+
     LedgerModels.Snapshot snapshot(int start, int end, int limit) {
         SQLiteDatabase db = getReadableDatabase();
         String[] args = {Integer.toString(start), Integer.toString(end)};

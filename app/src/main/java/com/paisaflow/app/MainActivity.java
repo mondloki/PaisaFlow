@@ -40,6 +40,8 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ListView;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
@@ -58,6 +60,8 @@ import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 
 public final class MainActivity extends Activity {
+    private enum DataAction { EXPORT, IMPORT, ERASE }
+
     private static final int EXPORT_REQUEST = 42;
     private static final int BACKUP_EXPORT_REQUEST = 43;
     private static final int BACKUP_IMPORT_REQUEST = 44;
@@ -512,6 +516,10 @@ public final class MainActivity extends Activity {
                 headerTitle.setText("Settings");
                 screenHost.addView(buildSettingsScreen(), frameMatch());
                 break;
+            case "backup":
+                headerTitle.setText("Backup");
+                screenHost.addView(buildBackupScreen(), frameMatch());
+                break;
             default:
                 activeScreen = "dashboard";
                 headerTitle.setText("Dashboard");
@@ -558,8 +566,7 @@ public final class MainActivity extends Activity {
         title.setPadding(dp(4), 0, 0, dp(12));
         screen.addView(title, matchWrap());
         addSettingsRow(screen, "₹", "Opening balance", v -> showOpeningBalanceDialog(false));
-        addSettingsRow(screen, "⇩", "Export", v -> showExportOptions());
-        addSettingsRow(screen, "⇧", "Import", v -> showImportOptions());
+        addSettingsRow(screen, "⇅", "Backup", v -> showScreen("backup"));
 
         TextView privacyBody = text("PaisaFlow does not transmit your data. A file provider you select may sync exported files.",
                 12, MUTED, Typeface.NORMAL);
@@ -567,6 +574,44 @@ public final class MainActivity extends Activity {
         screen.addView(privacyBody, matchWrap());
         scroll.addView(screen, new FrameLayout.LayoutParams(-1, -2));
         return scroll;
+    }
+
+    private View buildBackupScreen() {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        LinearLayout screen = column(this);
+        screen.setPadding(dp(16), dp(14), dp(16), dp(24));
+        screen.setBackgroundColor(PAPER);
+        TextView title = text("Backup & data", 20, INK, Typeface.BOLD);
+        title.setPadding(dp(4), 0, 0, dp(12));
+        screen.addView(title, matchWrap());
+        addSettingsRow(screen, "⇩", "Export", v -> showExportOptions());
+        addSettingsRow(screen, "⇧", "Import", v -> showImportOptions());
+        addDangerSettingsRow(screen, "Erase data", v -> showEraseOptions());
+
+        TextView privacyBody = text("PaisaFlow does not transmit your data. A file provider you select may sync exported files.",
+                12, MUTED, Typeface.NORMAL);
+        privacyBody.setPadding(dp(4), dp(22), dp(4), 0);
+        screen.addView(privacyBody, matchWrap());
+        scroll.addView(screen, new FrameLayout.LayoutParams(-1, -2));
+        return scroll;
+    }
+
+    private void addDangerSettingsRow(LinearLayout parent, String title, View.OnClickListener listener) {
+        LinearLayout item = row(this);
+        item.setGravity(Gravity.CENTER_VERTICAL);
+        item.setPadding(dp(4), dp(12), dp(4), dp(6));
+        item.setBackgroundColor(Color.TRANSPARENT);
+        item.setOnClickListener(listener);
+        TextView iconView = text("×", 22, DANGER, Typeface.BOLD);
+        iconView.setGravity(Gravity.CENTER);
+        item.addView(iconView, size(dp(40), dp(40)));
+        TextView label = text(title, 16, DANGER, Typeface.BOLD);
+        label.setPadding(dp(12), 0, dp(8), 0);
+        item.addView(label, weighted());
+        TextView chevron = text("›", 23, DANGER, Typeface.NORMAL);
+        item.addView(chevron, wrap());
+        parent.addView(item, new LinearLayout.LayoutParams(-1, dp(64)));
     }
 
     private void addSettingsRow(LinearLayout parent, String icon, String title, View.OnClickListener listener) {
@@ -611,6 +656,8 @@ public final class MainActivity extends Activity {
     private void handleBack() {
         if (drawerLayer != null && drawerLayer.getVisibility() == View.VISIBLE) {
             closeDrawer();
+        } else if ("backup".equals(activeScreen)) {
+            showScreen("settings");
         } else if (!"dashboard".equals(activeScreen)) {
             showScreen("dashboard");
         } else {
@@ -1248,29 +1295,152 @@ public final class MainActivity extends Activity {
     }
 
     AlertDialog showExportOptions() {
+        return showDataScopeDialog(DataAction.EXPORT);
+    }
+
+    AlertDialog showImportOptions() {
+        return showDataScopeDialog(DataAction.IMPORT);
+    }
+
+    AlertDialog showEraseOptions() {
+        return showDataScopeDialog(DataAction.ERASE);
+    }
+
+    private AlertDialog showDataScopeDialog(DataAction action) {
+        LinearLayout form = dialogForm();
+        RadioGroup choices = new RadioGroup(this);
+        choices.setOrientation(RadioGroup.VERTICAL);
+        RadioButton transactions = scopeRadio("Transactions only");
+        RadioButton full = scopeRadio("Full data");
+        choices.addView(transactions, new RadioGroup.LayoutParams(-1, dp(48)));
+        choices.addView(full, new RadioGroup.LayoutParams(-1, dp(48)));
+        transactions.setChecked(true);
+        form.addView(choices, matchWrap());
+
+        TextView explanation = text(scopeExplanation(action, false), 12, MUTED, Typeface.NORMAL);
+        explanation.setPadding(dp(2), dp(10), dp(2), dp(4));
+        explanation.setMinHeight(dp(58));
+        form.addView(explanation, matchWrap());
+        choices.setOnCheckedChangeListener((group, checkedId) ->
+                explanation.setText(scopeExplanation(action, checkedId == full.getId())));
+
+        String title = action == DataAction.EXPORT ? "Export" : action == DataAction.IMPORT ? "Import" : "Erase data";
+        String confirm = action == DataAction.ERASE ? "Continue" : title;
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("Export")
-                .setItems(new String[]{"Transactions only  ·  CSV", "Full data  ·  Encrypted backup"},
-                        (ignoredDialog, which) -> {
-                            if (which == 0) requestTransactionExport();
-                            else requestBackupExport();
-                        })
+                .setTitle(title)
+                .setView(form)
                 .setNegativeButton("Cancel", null)
+                .setPositiveButton(confirm, null)
                 .create();
+        dialog.setOnShowListener(ignored -> dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(v -> {
+            boolean fullData = full.isChecked();
+            dialog.dismiss();
+            if (action == DataAction.EXPORT) {
+                if (fullData) requestBackupExport(); else requestTransactionExport();
+            } else if (action == DataAction.IMPORT) {
+                if (fullData) requestBackupImport(); else requestTransactionImport();
+            } else {
+                showFinalEraseConfirmation(fullData);
+            }
+        }));
         dialog.show();
         return dialog;
     }
 
-    private void showImportOptions() {
-        new AlertDialog.Builder(this)
-                .setTitle("Import")
-                .setItems(new String[]{"Transactions only  ·  Merge CSV", "Full data  ·  Encrypted backup"},
-                        (dialog, which) -> {
-                            if (which == 0) requestTransactionImport();
-                            else requestBackupImport();
-                        })
+    private RadioButton scopeRadio(String label) {
+        RadioButton option = new RadioButton(this);
+        option.setId(View.generateViewId());
+        option.setText(label);
+        option.setTextSize(16);
+        option.setTextColor(INK);
+        option.setGravity(Gravity.CENTER_VERTICAL);
+        option.setPadding(dp(2), 0, 0, 0);
+        return option;
+    }
+
+    private String scopeExplanation(DataAction action, boolean fullData) {
+        if (action == DataAction.EXPORT) {
+            return fullData
+                    ? "Exports categories, transactions, and opening balance as a password-encrypted PaisaFlow backup."
+                    : "Exports transactions from the selected dashboard date range as a readable CSV file.";
+        }
+        if (action == DataAction.IMPORT) {
+            return fullData
+                    ? "Imports an encrypted PaisaFlow backup and replaces the current data after confirmation."
+                    : "Merges transactions from a CSV file. Existing records stay, so importing twice may create duplicates.";
+        }
+        return fullData
+                ? "Permanently deletes transactions, custom categories, opening balance, and settings. This cannot be undone."
+                : "Permanently deletes every transaction. Categories, opening balance, and settings remain. This cannot be undone.";
+    }
+
+    AlertDialog showFinalEraseConfirmation(boolean fullData) {
+        LinearLayout form = dialogForm();
+        TextView warning = text(fullData
+                        ? "All PaisaFlow data will be permanently erased and the app will return to its initial state."
+                        : "Every transaction will be permanently erased. Your categories, opening balance, and settings will remain.",
+                13, DANGER, Typeface.BOLD);
+        warning.setPadding(0, 0, 0, dp(12));
+        form.addView(warning, matchWrap());
+        TextView instruction = text("Type ERASE to confirm this irreversible action.", 12, MUTED, Typeface.NORMAL);
+        instruction.setPadding(0, 0, 0, dp(8));
+        form.addView(instruction, matchWrap());
+        EditText confirmation = field("ERASE");
+        confirmation.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
+        form.addView(confirmation, fieldParams());
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(fullData ? "Erase all data?" : "Erase all transactions?")
+                .setView(form)
                 .setNegativeButton("Cancel", null)
-                .show();
+                .setPositiveButton("Erase permanently", null)
+                .create();
+        dialog.setOnShowListener(ignored -> {
+            Button erase = dialog.getButton(DialogInterface.BUTTON_POSITIVE);
+            erase.setTextColor(DANGER);
+            erase.setEnabled(false);
+            confirmation.addTextChangedListener(new TextWatcher() {
+                @Override public void beforeTextChanged(CharSequence value, int start, int count, int after) { }
+                @Override public void onTextChanged(CharSequence value, int start, int before, int count) {
+                    erase.setEnabled("ERASE".contentEquals(value));
+                }
+                @Override public void afterTextChanged(Editable value) { }
+            });
+            erase.setOnClickListener(v -> {
+                dialog.dismiss();
+                eraseData(fullData);
+            });
+        });
+        dialog.show();
+        return dialog;
+    }
+
+    private void eraseData(boolean fullData) {
+        databaseExecutor.execute(() -> {
+            try {
+                if (fullData) {
+                    database.eraseAllData();
+                    preferences.edit().clear().commit();
+                } else {
+                    database.eraseTransactions();
+                }
+                List<LedgerModels.Category> refreshedCategories = database.categories();
+                mainHandler.post(() -> {
+                    categories = refreshedCategories;
+                    if (fullData) {
+                        activePreset = DateRanges.Preset.MONTH;
+                        dateWindow = DateRanges.forPreset(activePreset);
+                        openingPromptChecked = false;
+                        hasOpeningBalance = false;
+                        openingBalanceMinor = 0L;
+                    }
+                    Toast.makeText(this, fullData ? "All data erased" : "Transactions erased", Toast.LENGTH_SHORT).show();
+                    showScreen("dashboard");
+                });
+            } catch (Exception error) {
+                mainHandler.post(() -> Toast.makeText(this, "Data could not be erased", Toast.LENGTH_LONG).show());
+            }
+        });
     }
 
     private void requestTransactionExport() {

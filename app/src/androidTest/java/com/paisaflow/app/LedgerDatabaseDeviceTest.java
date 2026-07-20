@@ -106,6 +106,27 @@ public final class LedgerDatabaseDeviceTest {
         assertEquals(5125_50L, snapshot.summary.credits + snapshot.summary.expenses);
     }
 
+    @Test public void eraseScopesPreserveOrResetTheExpectedData() {
+        database = new LedgerDatabase(context);
+        LedgerModels.Category food = find(database.categories(), "Food");
+        long customId = database.addCategory("Personal", LedgerModels.EXPENSE, "dots", 0xFF607D8B);
+        database.setOpeningBalance(10_000_00L);
+        database.addEntry(125_00L, 20260720, food.id, LedgerModels.EXPENSE, "food");
+        database.addEntry(250_00L, 20260720, customId, LedgerModels.EXPENSE, "custom");
+
+        database.eraseTransactions();
+        assertTrue(database.snapshot(0, 99991231, 10).entries.isEmpty());
+        assertEquals(10_000_00L, database.openingBalance());
+        assertNotNull(find(database.categories(), "Personal"));
+
+        database.addEntry(500_00L, 20260720, customId, LedgerModels.EXPENSE, "again");
+        database.eraseAllData();
+        assertTrue(database.snapshot(0, 99991231, 10).entries.isEmpty());
+        assertFalse(database.hasOpeningBalance());
+        assertFalse(contains(database.categories(), "Personal"));
+        assertNotNull(find(database.categories(), "Food"));
+    }
+
     private void createVersionTwoDatabase() {
         File path = context.getDatabasePath(DATABASE_NAME);
         File parent = path.getParentFile();
