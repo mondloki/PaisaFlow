@@ -19,6 +19,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import java.io.File;
+import java.util.Arrays;
 import java.util.List;
 
 @RunWith(AndroidJUnit4.class)
@@ -86,6 +87,23 @@ public final class LedgerDatabaseDeviceTest {
         } catch (IllegalArgumentException expected) {
             assertTrue(expected.getMessage().contains("Standard"));
         }
+    }
+
+    @Test public void transactionImportMergesAndCreatesMissingCategories() {
+        database = new LedgerDatabase(context);
+        List<TransactionCsv.Row> rows = Arrays.asList(
+                new TransactionCsv.Row(20260720, "Food", LedgerModels.EXPENSE, 125_50L, "Lunch"),
+                new TransactionCsv.Row(20260720, "Side Project", LedgerModels.CREDIT, 5000_00L, "Invoice"));
+
+        List<String> missing = database.missingTransactionCategories(rows);
+        assertEquals(1, missing.size());
+        assertTrue(missing.get(0).contains("Side Project"));
+        database.mergeTransactions(rows, true);
+
+        LedgerModels.Snapshot snapshot = database.snapshot(20260720, 20260720, 10);
+        assertEquals(2, snapshot.entries.size());
+        assertNotNull(find(database.categories(), "Side Project"));
+        assertEquals(5125_50L, snapshot.summary.credits + snapshot.summary.expenses);
     }
 
     private void createVersionTwoDatabase() {

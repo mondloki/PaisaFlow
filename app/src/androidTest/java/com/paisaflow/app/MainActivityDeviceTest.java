@@ -7,6 +7,7 @@ import static org.junit.Assert.assertTrue;
 import android.app.AlertDialog;
 import android.graphics.Rect;
 import android.os.SystemClock;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
@@ -24,6 +25,35 @@ import java.util.concurrent.atomic.AtomicReference;
 
 @RunWith(AndroidJUnit4.class)
 public final class MainActivityDeviceTest {
+    @Test public void drawerOpensFromAHorizontalEdgeDrag() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                long downTime = SystemClock.uptimeMillis();
+                MotionEvent down = MotionEvent.obtain(downTime, downTime,
+                        MotionEvent.ACTION_DOWN, 1, 300, 0);
+                MotionEvent move = MotionEvent.obtain(downTime, downTime + 30,
+                        MotionEvent.ACTION_MOVE, 170, 300, 0);
+                MotionEvent up = MotionEvent.obtain(downTime, downTime + 60,
+                        MotionEvent.ACTION_UP, 260, 300, 0);
+                root.dispatchTouchEvent(down);
+                root.dispatchTouchEvent(move);
+                root.dispatchTouchEvent(up);
+                down.recycle();
+                move.recycle();
+                up.recycle();
+            });
+            SystemClock.sleep(250);
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                assertVisibleContentDescription(root, "Close navigation menu");
+                assertVisibleText(root, "Dashboard");
+                assertTrue(hasVisibleTextContaining(root, "Categories"));
+                assertTrue(hasVisibleTextContaining(root, "Settings"));
+            });
+        }
+    }
+
     @Test public void coreDashboardControlsAreMeasuredAndVisible() {
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             scenario.onActivity(activity -> {
@@ -46,7 +76,9 @@ public final class MainActivityDeviceTest {
 
     @Test public void drawerNavigatesToCategoriesAndSettings() {
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            AtomicReference<AlertDialog> exportDialog = new AtomicReference<>();
             scenario.onActivity(activity -> findText(activity.getWindow().getDecorView(), "☰").performClick());
+            SystemClock.sleep(250);
             scenario.onActivity(activity -> {
                 View root = activity.getWindow().getDecorView();
                 assertVisibleText(root, "Dashboard");
@@ -56,11 +88,21 @@ public final class MainActivityDeviceTest {
             });
             scenario.onActivity(activity -> assertVisibleText(activity.getWindow().getDecorView(), "Manage categories"));
             scenario.onActivity(activity -> findText(activity.getWindow().getDecorView(), "☰").performClick());
+            SystemClock.sleep(250);
             scenario.onActivity(activity -> findTextContaining(activity.getWindow().getDecorView(), "Settings").performClick());
             scenario.onActivity(activity -> {
                 View root = activity.getWindow().getDecorView();
-                assertVisibleText(root, "Create full backup");
-                assertVisibleText(root, "Import full backup");
+                assertVisibleText(root, "Opening balance");
+                assertVisibleText(root, "Export");
+                assertVisibleText(root, "Import");
+                exportDialog.set(activity.showExportOptions());
+            });
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            scenario.onActivity(activity -> {
+                View root = exportDialog.get().getWindow().getDecorView();
+                assertTrue(hasVisibleTextContaining(root, "Transactions only"));
+                assertTrue(hasVisibleTextContaining(root, "Full data"));
+                exportDialog.get().dismiss();
             });
         }
     }

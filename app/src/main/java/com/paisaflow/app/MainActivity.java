@@ -1,5 +1,6 @@
 package com.paisaflow.app;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.DatePickerDialog;
@@ -20,10 +21,16 @@ import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
 import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.VelocityTracker;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowInsets;
+import android.view.animation.PathInterpolator;
+import android.window.OnBackInvokedCallback;
+import android.window.OnBackInvokedDispatcher;
 import android.widget.ArrayAdapter;
 import android.widget.AdapterView;
 import android.widget.BaseAdapter;
@@ -47,14 +54,14 @@ import java.util.concurrent.Executors;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 
 public final class MainActivity extends Activity {
     private static final int EXPORT_REQUEST = 42;
     private static final int BACKUP_EXPORT_REQUEST = 43;
     private static final int BACKUP_IMPORT_REQUEST = 44;
+    private static final int TRANSACTION_IMPORT_REQUEST = 45;
     private static final int INK = 0xFF0B1220;
     private static final int INK_SOFT = 0xFF172033;
     private static final int PAPER = 0xFFF6F7F2;
@@ -88,6 +95,8 @@ public final class MainActivity extends Activity {
     private FrameLayout screenHost;
     private View dashboardScreen;
     private View drawerLayer;
+    private View drawerPanel;
+    private View drawerScrim;
     private TextView headerTitle;
     private String activeScreen = "dashboard";
     private LinearLayout summaryPanel;
@@ -101,6 +110,13 @@ public final class MainActivity extends Activity {
     private boolean hasOpeningBalance;
     private long openingBalanceMinor;
     private boolean openingPromptChecked;
+    private boolean drawerGestureCandidate;
+    private boolean drawerDragging;
+    private float drawerDownX;
+    private float drawerDownY;
+    private float drawerStartTranslation;
+    private VelocityTracker drawerVelocity;
+    private OnBackInvokedCallback backCallback;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -111,10 +127,19 @@ public final class MainActivity extends Activity {
         preferences = getSharedPreferences("display", MODE_PRIVATE);
         restoreDateSelection();
         setContentView(buildScreen());
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            backCallback = this::handleBack;
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    OnBackInvokedDispatcher.PRIORITY_DEFAULT, backCallback);
+        }
         reload();
     }
 
     @Override protected void onDestroy() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && backCallback != null) {
+            getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);
+        }
+        if (drawerVelocity != null) drawerVelocity.recycle();
         databaseExecutor.shutdown();
         database.close();
         super.onDestroy();
@@ -311,8 +336,13 @@ public final class MainActivity extends Activity {
     private void addDrawer(FrameLayout shell) {
         FrameLayout layer = new FrameLayout(this);
         layer.setVisibility(View.GONE);
-        layer.setBackgroundColor(0x66000000);
-        layer.setOnClickListener(v -> closeDrawer());
+
+        View scrim = new View(this);
+        scrim.setBackgroundColor(Color.BLACK);
+        scrim.setAlpha(0f);
+        scrim.setContentDescription("Close navigation menu");
+        scrim.setOnClickListener(v -> closeDrawer());
+        layer.addView(scrim, frameMatch());
 
         LinearLayout panel = column(this);
         panel.setPadding(dp(16), dp(24), dp(16), dp(16));
@@ -337,7 +367,7 @@ public final class MainActivity extends Activity {
         panel.addView(drawerItem("◫", "Categories", "categories"), new LinearLayout.LayoutParams(-1, dp(54)));
         panel.addView(drawerItem("⚙", "Settings", "settings"), new LinearLayout.LayoutParams(-1, dp(54)));
 
-        TextView privacy = text("Offline only  ·  Your data stays on this device", 11, MUTED, Typeface.NORMAL);
+        TextView privacy = text("Offline only  ·  Exports go only where you choose", 11, MUTED, Typeface.NORMAL);
         privacy.setGravity(Gravity.BOTTOM);
         panel.addView(privacy, new LinearLayout.LayoutParams(-1, 0, 1f));
 
@@ -345,6 +375,8 @@ public final class MainActivity extends Activity {
         layer.addView(panel, panelParams);
         shell.addView(layer, frameMatch());
         drawerLayer = layer;
+        drawerPanel = panel;
+        drawerScrim = scrim;
     }
 
     private Button drawerItem(String icon, String label, String screen) {
@@ -362,11 +394,109 @@ public final class MainActivity extends Activity {
     }
 
     private void openDrawer() {
+        drawerPanel.animate().cancel();
+        drawerScrim.animate().cancel();
         drawerLayer.setVisibility(View.VISIBLE);
+        drawerPanel.setTranslationX(-drawerWidth());
+        drawerScrim.setAlpha(0f);
+        drawerPanel.animate().translationX(0f).setDuration(210)
+                .setInterpolator(new PathInterpolator(0.2f, 0f, 0f, 1f)).start();
+        drawerScrim.animate().alpha(0.4f).setDuration(210).start();
     }
 
     private void closeDrawer() {
-        drawerLayer.setVisibility(View.GONE);
+        if (drawerLayer == null || drawerLayer.getVisibility() != View.VISIBLE) return;
+        drawerPanel.animate().cancel();
+        drawerScrim.animate().cancel();
+        drawerPanel.animate().translationX(-drawerWidth()).setDuration(180)
+                .setInterpolator(new PathInterpolator(0.4f, 0f, 1f, 1f))
+                .withEndAction(() -> drawerLayer.setVisibility(View.GONE)).start();
+        drawerScrim.animate().alpha(0f).setDuration(180).start();
+    }
+
+    private int drawerWidth() { return dp(286); }
+
+    private void settleDrawer(boolean open) {
+        if (open) {
+            drawerPanel.animate().cancel();
+            drawerScrim.animate().cancel();
+            drawerPanel.animate().translationX(0f).setDuration(180)
+                    .setInterpolator(new PathInterpolator(0.2f, 0f, 0f, 1f)).start();
+            drawerScrim.animate().alpha(0.4f).setDuration(180).start();
+        } else {
+            closeDrawer();
+        }
+    }
+
+    private void setDrawerTranslation(float translation) {
+        float value = Math.max(-drawerWidth(), Math.min(0f, translation));
+        drawerPanel.setTranslationX(value);
+        drawerScrim.setAlpha(0.4f * (1f + value / drawerWidth()));
+    }
+
+    @Override public boolean dispatchTouchEvent(MotionEvent event) {
+        if (drawerLayer == null) return super.dispatchTouchEvent(event);
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            if (drawerVelocity != null) drawerVelocity.recycle();
+            drawerVelocity = VelocityTracker.obtain();
+            drawerVelocity.addMovement(event);
+            drawerDownX = event.getX();
+            drawerDownY = event.getY();
+            boolean visible = drawerLayer.getVisibility() == View.VISIBLE;
+            float panelEdge = visible ? drawerWidth() + drawerPanel.getTranslationX() : 0f;
+            drawerGestureCandidate = visible ? drawerDownX <= panelEdge : drawerDownX <= dp(24);
+            drawerDragging = false;
+            drawerStartTranslation = visible ? drawerPanel.getTranslationX() : -drawerWidth();
+        } else if (drawerVelocity != null) {
+            drawerVelocity.addMovement(event);
+        }
+
+        if (action == MotionEvent.ACTION_MOVE && drawerGestureCandidate) {
+            float dx = event.getX() - drawerDownX;
+            float dy = event.getY() - drawerDownY;
+            int slop = ViewConfiguration.get(this).getScaledTouchSlop();
+            if (!drawerDragging && Math.abs(dx) > slop && Math.abs(dx) > Math.abs(dy) * 1.2f
+                    && (drawerLayer.getVisibility() == View.VISIBLE || dx > 0f)) {
+                drawerDragging = true;
+                MotionEvent cancel = MotionEvent.obtain(event);
+                cancel.setAction(MotionEvent.ACTION_CANCEL);
+                super.dispatchTouchEvent(cancel);
+                cancel.recycle();
+                if (drawerLayer.getVisibility() != View.VISIBLE) {
+                    drawerLayer.setVisibility(View.VISIBLE);
+                    setDrawerTranslation(-drawerWidth());
+                }
+                drawerPanel.animate().cancel();
+                drawerScrim.animate().cancel();
+            }
+            if (drawerDragging) {
+                setDrawerTranslation(drawerStartTranslation + dx);
+                return true;
+            }
+        }
+
+        if ((action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) && drawerDragging) {
+            drawerVelocity.computeCurrentVelocity(1000);
+            float velocity = drawerVelocity.getXVelocity();
+            float progress = 1f + drawerPanel.getTranslationX() / drawerWidth();
+            boolean open = action != MotionEvent.ACTION_CANCEL
+                    && (velocity > dp(700) || (velocity >= -dp(700) && progress >= 0.35f));
+            settleDrawer(open);
+            drawerGestureCandidate = false;
+            drawerDragging = false;
+            drawerVelocity.recycle();
+            drawerVelocity = null;
+            return true;
+        }
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            drawerGestureCandidate = false;
+            if (drawerVelocity != null) {
+                drawerVelocity.recycle();
+                drawerVelocity = null;
+            }
+        }
+        return super.dispatchTouchEvent(event);
     }
 
     private void showScreen(String screen) {
@@ -424,56 +554,41 @@ public final class MainActivity extends Activity {
         LinearLayout screen = column(this);
         screen.setPadding(dp(16), dp(14), dp(16), dp(24));
         screen.setBackgroundColor(PAPER);
-        screen.addView(text("Your data", 20, INK, Typeface.BOLD), matchWrap());
-        TextView note = text("Manage your starting balance and portable offline backups.", 12, MUTED, Typeface.NORMAL);
-        note.setPadding(0, dp(4), 0, dp(12));
-        screen.addView(note, matchWrap());
+        TextView title = text("Your data", 20, INK, Typeface.BOLD);
+        title.setPadding(dp(4), 0, 0, dp(12));
+        screen.addView(title, matchWrap());
+        addSettingsRow(screen, "₹", "Opening balance", v -> showOpeningBalanceDialog(false));
+        addSettingsRow(screen, "⇩", "Export", v -> showExportOptions());
+        addSettingsRow(screen, "⇧", "Import", v -> showImportOptions());
 
-        screen.addView(settingsAction("₹", "Opening balance", "Set or edit the balance from when record-keeping began",
-                v -> showOpeningBalanceDialog(false)), settingsParams());
-        screen.addView(settingsAction("⇩", "Export transactions", "Save the dashboard's selected period as CSV",
-                v -> requestExport()), settingsParams());
-        screen.addView(settingsAction("▣", "Create full backup", "Save transactions, categories, and opening balance as JSON",
-                v -> requestBackupExport()), settingsParams());
-        screen.addView(settingsAction("⇧", "Import full backup", "Review and replace PaisaFlow data from a JSON backup",
-                v -> requestBackupImport()), settingsParams());
-
-        TextView privacy = text("PRIVACY", 10, MUTED, Typeface.BOLD);
-        privacy.setPadding(dp(4), dp(20), 0, dp(8));
-        screen.addView(privacy, matchWrap());
-        TextView privacyBody = text("PaisaFlow has no internet permission. Imports and exports use Android's document picker, so the app only accesses the file you choose.",
-                13, INK_SOFT, Typeface.NORMAL);
-        privacyBody.setPadding(dp(14), dp(12), dp(14), dp(12));
-        privacyBody.setBackground(roundRect(WHITE, dp(13), 0xFFE1E5DD, dp(1)));
+        TextView privacyBody = text("PaisaFlow does not transmit your data. A file provider you select may sync exported files.",
+                12, MUTED, Typeface.NORMAL);
+        privacyBody.setPadding(dp(4), dp(22), dp(4), 0);
         screen.addView(privacyBody, matchWrap());
         scroll.addView(screen, new FrameLayout.LayoutParams(-1, -2));
         return scroll;
     }
 
-    private View settingsAction(String icon, String title, String subtitle, View.OnClickListener listener) {
-        LinearLayout card = row(this);
-        card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(12), dp(8), dp(12), dp(8));
-        card.setBackground(roundRect(WHITE, dp(14), 0xFFE1E5DD, dp(1)));
-        card.setOnClickListener(listener);
-        TextView iconView = text(icon, 19, WHITE, Typeface.BOLD);
+    private void addSettingsRow(LinearLayout parent, String icon, String title, View.OnClickListener listener) {
+        LinearLayout item = row(this);
+        item.setGravity(Gravity.CENTER_VERTICAL);
+        item.setPadding(dp(4), dp(6), dp(4), dp(6));
+        item.setBackgroundColor(Color.TRANSPARENT);
+        item.setOnClickListener(listener);
+        TextView iconView = text(icon, 18, INK_SOFT, Typeface.BOLD);
         iconView.setGravity(Gravity.CENTER);
-        iconView.setBackground(roundRect(INK_SOFT, dp(12)));
-        card.addView(iconView, size(dp(42), dp(42)));
-        LinearLayout copy = column(this);
-        copy.setPadding(dp(12), 0, dp(8), 0);
-        copy.addView(text(title, 15, INK, Typeface.BOLD));
-        copy.addView(text(subtitle, 11, MUTED, Typeface.NORMAL));
-        card.addView(copy, weighted());
+        item.addView(iconView, size(dp(40), dp(40)));
+        TextView label = text(title, 16, INK, Typeface.BOLD);
+        label.setPadding(dp(12), 0, dp(8), 0);
+        item.addView(label, weighted());
         TextView chevron = text("›", 23, MUTED, Typeface.NORMAL);
-        card.addView(chevron, wrap());
-        return card;
-    }
-
-    private LinearLayout.LayoutParams settingsParams() {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, dp(70));
-        params.setMargins(0, 0, 0, dp(9));
-        return params;
+        item.addView(chevron, wrap());
+        parent.addView(item, new LinearLayout.LayoutParams(-1, dp(58)));
+        View divider = new View(this);
+        divider.setBackgroundColor(0xFFDDE1D9);
+        LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(-1, dp(1));
+        dividerParams.setMargins(dp(56), 0, 0, 0);
+        parent.addView(divider, dividerParams);
     }
 
     private Button compactLightButton(String label) {
@@ -488,13 +603,18 @@ public final class MainActivity extends Activity {
         return button;
     }
 
+    @SuppressLint("GestureBackNavigation")
     @Override public void onBackPressed() {
+        handleBack();
+    }
+
+    private void handleBack() {
         if (drawerLayer != null && drawerLayer.getVisibility() == View.VISIBLE) {
             closeDrawer();
         } else if (!"dashboard".equals(activeScreen)) {
             showScreen("dashboard");
         } else {
-            super.onBackPressed();
+            finishAfterTransition();
         }
     }
 
@@ -993,7 +1113,7 @@ public final class MainActivity extends Activity {
                 AlertDialog dialog = new AlertDialog.Builder(this)
                         .setTitle("Delete " + category.name + "?")
                         .setMessage(recordCount + (recordCount == 1 ? " record uses " : " records use ")
-                                + "this category. Move them to another " + flowLabel(category.flow).toLowerCase()
+                                + "this category. Move them to another " + flowLabel(category.flow).toLowerCase(java.util.Locale.ROOT)
                                 + " category to preserve your totals, or delete the records as well.")
                         .setNegativeButton("Cancel", null)
                         .setNeutralButton("Delete records", null)
@@ -1127,7 +1247,33 @@ public final class MainActivity extends Activity {
                 })).show();
     }
 
-    private void requestExport() {
+    AlertDialog showExportOptions() {
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Export")
+                .setItems(new String[]{"Transactions only  ·  CSV", "Full data  ·  Encrypted backup"},
+                        (ignoredDialog, which) -> {
+                            if (which == 0) requestTransactionExport();
+                            else requestBackupExport();
+                        })
+                .setNegativeButton("Cancel", null)
+                .create();
+        dialog.show();
+        return dialog;
+    }
+
+    private void showImportOptions() {
+        new AlertDialog.Builder(this)
+                .setTitle("Import")
+                .setItems(new String[]{"Transactions only  ·  Merge CSV", "Full data  ·  Encrypted backup"},
+                        (dialog, which) -> {
+                            if (which == 0) requestTransactionImport();
+                            else requestBackupImport();
+                        })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void requestTransactionExport() {
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("text/csv");
@@ -1138,15 +1284,22 @@ public final class MainActivity extends Activity {
     private void requestBackupExport() {
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("application/json");
-        intent.putExtra(Intent.EXTRA_TITLE, "paisaflow-full-backup.json");
+        intent.setType("application/octet-stream");
+        intent.putExtra(Intent.EXTRA_TITLE, "paisaflow-full-backup.pfbackup");
         startActivityForResult(intent, BACKUP_EXPORT_REQUEST);
+    }
+
+    private void requestTransactionImport() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("text/*");
+        startActivityForResult(intent, TRANSACTION_IMPORT_REQUEST);
     }
 
     private void requestBackupImport() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("application/json");
+        intent.setType("*/*");
         startActivityForResult(intent, BACKUP_IMPORT_REQUEST);
     }
 
@@ -1155,8 +1308,9 @@ public final class MainActivity extends Activity {
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         Uri document = data.getData();
         if (requestCode == EXPORT_REQUEST) writeCsv(document);
-        else if (requestCode == BACKUP_EXPORT_REQUEST) writeFullBackup(document);
-        else if (requestCode == BACKUP_IMPORT_REQUEST) inspectImport(document);
+        else if (requestCode == BACKUP_EXPORT_REQUEST) promptBackupPasswordForExport(document);
+        else if (requestCode == BACKUP_IMPORT_REQUEST) inspectFullImport(document);
+        else if (requestCode == TRANSACTION_IMPORT_REQUEST) inspectTransactionImport(document);
     }
 
     private void writeCsv(Uri destination) {
@@ -1165,16 +1319,9 @@ public final class MainActivity extends Activity {
         databaseExecutor.execute(() -> {
             try (OutputStream stream = getContentResolver().openOutputStream(destination);
                  OutputStreamWriter writer = new OutputStreamWriter(stream, StandardCharsets.UTF_8)) {
-                LedgerModels.Snapshot export = database.snapshot(start, end, 100000);
-                writer.write("Date,Category,Type,Amount INR,Note\n");
-                for (LedgerModels.Entry entry : export.entries) {
-                    writer.write(csv(DateRanges.format(entry.dateKey)) + ",");
-                    writer.write(csv(entry.category.name) + ",");
-                    writer.write(csv(flowLabel(entry.category.flow)) + ",");
-                    writer.write(Long.toString(entry.amountMinor / 100));
-                    writer.write(String.format(java.util.Locale.US, ".%02d", Math.abs(entry.amountMinor % 100)) + ",");
-                    writer.write(csv(entry.note) + "\n");
-                }
+                if (stream == null) throw new IllegalStateException("Could not open destination");
+                LedgerModels.Snapshot export = database.snapshot(start, end, 1_000_000);
+                writer.write(TransactionCsv.create(export.entries));
                 writer.flush();
                 mainHandler.post(() -> Toast.makeText(this, "CSV exported", Toast.LENGTH_SHORT).show());
             } catch (Exception error) {
@@ -1183,55 +1330,179 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private void writeFullBackup(Uri destination) {
+    private void promptBackupPasswordForExport(Uri destination) {
+        LinearLayout form = dialogForm();
+        TextView note = text("This password encrypts the backup. It cannot be recovered if forgotten.",
+                13, MUTED, Typeface.NORMAL);
+        note.setPadding(0, 0, 0, dp(8));
+        form.addView(note, matchWrap());
+        EditText password = passwordField("Password  ·  At least 8 characters");
+        EditText confirm = passwordField("Confirm password");
+        form.addView(password, fieldParams());
+        form.addView(confirm, fieldParams());
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Encrypt full backup")
+                .setView(form)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Export", null)
+                .create();
+        dialog.setOnShowListener(ignored -> dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(v -> {
+            char[] first = password.getText().toString().toCharArray();
+            char[] second = confirm.getText().toString().toCharArray();
+            if (first.length < 8) {
+                password.setError("Use at least 8 characters");
+                Arrays.fill(first, '\0'); Arrays.fill(second, '\0');
+                return;
+            }
+            if (!Arrays.equals(first, second)) {
+                confirm.setError("Passwords do not match");
+                Arrays.fill(first, '\0'); Arrays.fill(second, '\0');
+                return;
+            }
+            Arrays.fill(second, '\0');
+            dialog.dismiss();
+            writeFullBackup(destination, first);
+        }));
+        dialog.show();
+    }
+
+    private void writeFullBackup(Uri destination, char[] password) {
         databaseExecutor.execute(() -> {
-            try (OutputStream stream = getContentResolver().openOutputStream(destination);
-                 OutputStreamWriter writer = new OutputStreamWriter(stream, StandardCharsets.UTF_8)) {
+            try (OutputStream stream = getContentResolver().openOutputStream(destination)) {
                 if (stream == null) throw new IllegalStateException("Could not open destination");
-                writer.write(database.createBackupJson());
-                writer.flush();
-                mainHandler.post(() -> Toast.makeText(this, "Full backup created", Toast.LENGTH_SHORT).show());
+                stream.write(BackupCrypto.encrypt(database.createBackupJson(), password));
+                stream.flush();
+                mainHandler.post(() -> Toast.makeText(this, "Encrypted backup created", Toast.LENGTH_SHORT).show());
             } catch (Exception error) {
                 mainHandler.post(() -> Toast.makeText(this, "Backup export failed", Toast.LENGTH_LONG).show());
+            } finally {
+                Arrays.fill(password, '\0');
             }
         });
     }
 
-    private void inspectImport(Uri source) {
+    private void inspectFullImport(Uri source) {
         databaseExecutor.execute(() -> {
             try {
-                String json = readDocument(source);
-                LedgerModels.BackupInfo info = database.inspectBackup(json);
-                mainHandler.post(() -> confirmImport(json, info));
+                byte[] contents = readDocumentBytes(source);
+                if (BackupCrypto.isEncrypted(contents)) {
+                    mainHandler.post(() -> promptBackupPasswordForImport(contents));
+                } else {
+                    String json = decodeUtf8(contents);
+                    LedgerModels.BackupInfo info = database.inspectBackup(json);
+                    mainHandler.post(() -> confirmImport(json, info, true));
+                }
             } catch (Exception error) {
-                mainHandler.post(() -> new AlertDialog.Builder(this)
-                        .setTitle("Backup could not be imported")
-                        .setMessage(error.getMessage() == null ? "The selected file is invalid." : error.getMessage())
-                        .setPositiveButton("OK", null)
-                        .show());
+                mainHandler.post(() -> showImportError(error));
             }
         });
     }
 
-    private String readDocument(Uri source) throws Exception {
-        StringBuilder result = new StringBuilder();
-        try (InputStream stream = getContentResolver().openInputStream(source);
-             BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
-            if (stream == null) throw new IllegalStateException("Could not open selected file");
-            char[] buffer = new char[8192];
-            int read;
-            while ((read = reader.read(buffer)) != -1) {
-                result.append(buffer, 0, read);
-                if (result.length() > 50_000_000) throw new IllegalArgumentException("Backup is larger than 50 MB");
+    private void promptBackupPasswordForImport(byte[] encrypted) {
+        LinearLayout form = dialogForm();
+        EditText password = passwordField("Backup password");
+        form.addView(password, fieldParams());
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Unlock full backup")
+                .setView(form)
+                .setNegativeButton("Cancel", (ignoredDialog, ignoredWhich) -> Arrays.fill(encrypted, (byte) 0))
+                .setPositiveButton("Continue", null)
+                .create();
+        dialog.setOnCancelListener(ignored -> Arrays.fill(encrypted, (byte) 0));
+        dialog.setOnShowListener(ignored -> dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(v -> {
+            char[] value = password.getText().toString().toCharArray();
+            if (value.length < 8) {
+                password.setError("Enter the backup password");
+                Arrays.fill(value, '\0');
+                return;
             }
-        }
-        return result.toString();
+            dialog.dismiss();
+            databaseExecutor.execute(() -> {
+                try {
+                    String json = BackupCrypto.decrypt(encrypted, value);
+                    LedgerModels.BackupInfo info = database.inspectBackup(json);
+                    mainHandler.post(() -> confirmImport(json, info, false));
+                } catch (Exception error) {
+                    mainHandler.post(() -> showImportError(error));
+                } finally {
+                    Arrays.fill(value, '\0');
+                    Arrays.fill(encrypted, (byte) 0);
+                }
+            });
+        }));
+        dialog.show();
     }
 
-    private void confirmImport(String json, LedgerModels.BackupInfo info) {
+    private void inspectTransactionImport(Uri source) {
+        databaseExecutor.execute(() -> {
+            try {
+                TransactionCsv.Parsed parsed = TransactionCsv.parse(decodeUtf8(readDocumentBytes(source)));
+                List<String> missing = database.missingTransactionCategories(parsed.rows);
+                mainHandler.post(() -> confirmTransactionImport(parsed, missing));
+            } catch (Exception error) {
+                mainHandler.post(() -> showImportError(error));
+            }
+        });
+    }
+
+    private void confirmTransactionImport(TransactionCsv.Parsed parsed, List<String> missing) {
+        StringBuilder message = new StringBuilder("Add ").append(parsed.rows.size())
+                .append(" transactions to the current ledger?\n\nImporting the same CSV twice may create duplicates.");
+        if (!missing.isEmpty()) {
+            message.append("\n\nThese missing categories will be created:\n");
+            for (String category : missing) message.append("\n• ").append(category);
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Merge transactions?")
+                .setMessage(message.toString())
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton(missing.isEmpty() ? "Import" : "Create & import", (dialog, which) ->
+                        databaseExecutor.execute(() -> {
+                            try {
+                                database.mergeTransactions(parsed.rows, !missing.isEmpty());
+                                mainHandler.post(() -> {
+                                    Toast.makeText(this, parsed.rows.size() + " transactions imported", Toast.LENGTH_SHORT).show();
+                                    reload();
+                                });
+                            } catch (Exception error) {
+                                mainHandler.post(() -> showImportError(error));
+                            }
+                        }))
+                .show();
+    }
+
+    private byte[] readDocumentBytes(Uri source) throws Exception {
+        try (InputStream stream = getContentResolver().openInputStream(source);
+             ByteArrayOutputStream result = new ByteArrayOutputStream()) {
+            if (stream == null) throw new IllegalStateException("Could not open selected file");
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = stream.read(buffer)) != -1) {
+                result.write(buffer, 0, read);
+                if (result.size() > 50_000_128) throw new IllegalArgumentException("Selected file is larger than 50 MB");
+            }
+            return result.toByteArray();
+        }
+    }
+
+    private static String decodeUtf8(byte[] contents) {
+        String value = new String(contents, StandardCharsets.UTF_8);
+        return value.startsWith("\uFEFF") ? value.substring(1) : value;
+    }
+
+    private void showImportError(Exception error) {
+        new AlertDialog.Builder(this)
+                .setTitle("File could not be imported")
+                .setMessage(error.getMessage() == null ? "The selected file is invalid." : error.getMessage())
+                .setPositiveButton("OK", null)
+                .show();
+    }
+
+    private void confirmImport(String json, LedgerModels.BackupInfo info, boolean legacyJson) {
         String message = "This backup contains " + info.transactions + " transactions and " + info.categories
                 + " categories" + (info.hasOpeningBalance ? ", including an opening balance." : ".")
-                + "\n\nImporting replaces all current PaisaFlow data. This cannot be undone unless you create a backup first.";
+                + (legacyJson ? "\n\nThis is an older unencrypted JSON backup." : "")
+                + "\n\nImporting replaces all current PaisaFlow data. Create a current backup first if you may need to undo this.";
         new AlertDialog.Builder(this)
                 .setTitle("Replace current data?")
                 .setMessage(message)
@@ -1249,8 +1520,10 @@ public final class MainActivity extends Activity {
                 })).show();
     }
 
-    private static String csv(String value) {
-        return "\"" + (value == null ? "" : value.replace("\"", "\"\"")) + "\"";
+    private EditText passwordField(String hint) {
+        EditText field = field(hint);
+        field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        return field;
     }
 
     private LinearLayout dialogForm() {

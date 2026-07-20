@@ -8,6 +8,7 @@ import android.database.sqlite.SQLiteOpenHelper;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -160,6 +161,89 @@ final class LedgerDatabase extends SQLiteOpenHelper {
         values.put("note", note == null ? "" : note.trim());
         values.put("created_at", System.currentTimeMillis());
         return getWritableDatabase().insertOrThrow("entries", null, values);
+    }
+
+    List<String> missingTransactionCategories(List<TransactionCsv.Row> rows) {
+        Map<String, ImportCategory> available = importCategories(getReadableDatabase());
+        LinkedHashMap<String, String> missing = new LinkedHashMap<>();
+        Map<String, String> plannedFlows = new HashMap<>();
+        for (TransactionCsv.Row row : rows) {
+            String key = row.category.toLowerCase(Locale.ROOT);
+            ImportCategory existing = available.get(key);
+            if (existing != null && !existing.flow.equals(row.flow)) {
+                throw new IllegalArgumentException(row.category + " already exists as a different type");
+            }
+            if (existing == null) {
+                String plannedFlow = plannedFlows.get(key);
+                if (plannedFlow != null && !plannedFlow.equals(row.flow)) {
+                    throw new IllegalArgumentException(row.category + " is used with different types in the CSV");
+                }
+                if (plannedFlow == null) plannedFlows.put(key, row.flow);
+                missing.put(key, row.category + " (" + flowLabel(row.flow) + ")");
+            }
+        }
+        return new ArrayList<>(missing.values());
+    }
+
+    void mergeTransactions(List<TransactionCsv.Row> rows, boolean createMissingCategories) {
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            Map<String, ImportCategory> available = importCategories(db);
+            Map<String, String> plannedFlows = new HashMap<>();
+            for (TransactionCsv.Row row : rows) {
+                String key = row.category.toLowerCase(Locale.ROOT);
+                ImportCategory existing = available.get(key);
+                if (existing != null && !existing.flow.equals(row.flow)) {
+                    throw new IllegalArgumentException(row.category + " already exists as a different type");
+                }
+                if (existing == null && !createMissingCategories) {
+                    throw new IllegalArgumentException("CSV references a missing category: " + row.category);
+                }
+                if (existing == null) {
+                    String plannedFlow = plannedFlows.get(key);
+                    if (plannedFlow != null && !plannedFlow.equals(row.flow)) {
+                        throw new IllegalArgumentException(row.category + " is used with different types in the CSV");
+                    }
+                    if (plannedFlow == null) plannedFlows.put(key, row.flow);
+                }
+            }
+
+            long createdAt = System.currentTimeMillis();
+            for (TransactionCsv.Row row : rows) {
+                String key = row.category.toLowerCase(Locale.ROOT);
+                ImportCategory category = available.get(key);
+                if (category == null) {
+                    ContentValues categoryValues = new ContentValues(6);
+                    categoryValues.put("name", row.category);
+                    categoryValues.put("flow", row.flow);
+                    categoryValues.put("icon", "dots");
+                    categoryValues.put("color", importColor(row.flow));
+                    categoryValues.put("active", 1);
+                    categoryValues.put("standard", 0);
+                    long id = db.insertOrThrow("categories", null, categoryValues);
+                    category = new ImportCategory(id, row.flow, true);
+                    available.put(key, category);
+                } else if (!category.active) {
+                    ContentValues activate = new ContentValues(1);
+                    activate.put("active", 1);
+                    db.update("categories", activate, "id=?", new String[]{Long.toString(category.id)});
+                    category.active = true;
+                }
+
+                ContentValues entry = new ContentValues(6);
+                entry.put("amount_minor", row.amountMinor);
+                entry.put("date_key", row.dateKey);
+                entry.put("category_id", category.id);
+                entry.put("flow", row.flow);
+                entry.put("note", row.note);
+                entry.put("created_at", createdAt++);
+                db.insertOrThrow("entries", null, entry);
+            }
+            db.setTransactionSuccessful();
+        } finally {
+            db.endTransaction();
+        }
     }
 
     void deleteEntry(long id) {
@@ -392,6 +476,41 @@ final class LedgerDatabase extends SQLiteOpenHelper {
     private static boolean validFlow(String flow) {
         return LedgerModels.EXPENSE.equals(flow) || LedgerModels.INVESTMENT.equals(flow)
                 || LedgerModels.CREDIT.equals(flow);
+    }
+
+    private static Map<String, ImportCategory> importCategories(SQLiteDatabase db) {
+        HashMap<String, ImportCategory> result = new HashMap<>();
+        try (Cursor cursor = db.rawQuery("SELECT id,name,flow,active FROM categories", null)) {
+            while (cursor.moveToNext()) {
+                result.put(cursor.getString(1).toLowerCase(Locale.ROOT),
+                        new ImportCategory(cursor.getLong(0), cursor.getString(2), cursor.getInt(3) == 1));
+            }
+        }
+        return result;
+    }
+
+    private static String flowLabel(String flow) {
+        if (LedgerModels.INVESTMENT.equals(flow)) return "Investment";
+        if (LedgerModels.CREDIT.equals(flow)) return "Credit";
+        return "Expense";
+    }
+
+    private static int importColor(String flow) {
+        if (LedgerModels.INVESTMENT.equals(flow)) return 0xFF6C63A8;
+        if (LedgerModels.CREDIT.equals(flow)) return 0xFF3F8F74;
+        return 0xFF607D8B;
+    }
+
+    private static final class ImportCategory {
+        final long id;
+        final String flow;
+        boolean active;
+
+        ImportCategory(long id, String flow, boolean active) {
+            this.id = id;
+            this.flow = flow;
+            this.active = active;
+        }
     }
 
     private static LedgerModels.Category readCategory(Cursor cursor, int offset) {
