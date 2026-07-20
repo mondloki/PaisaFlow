@@ -94,6 +94,7 @@ public final class MainActivityDeviceTest {
             scenario.onActivity(activity -> {
                 View root = activity.getWindow().getDecorView();
                 assertVisibleText(root, "Opening balance");
+                assertVisibleText(root, "App lock");
                 assertVisibleText(root, "Backup");
                 ((View) findText(root, "Backup").getParent()).performClick();
             });
@@ -114,6 +115,22 @@ public final class MainActivityDeviceTest {
                 findText(root, "Full data").performClick();
                 assertTrue(hasVisibleTextContaining(root, "password-encrypted"));
                 exportDialog.get().dismiss();
+            });
+        }
+    }
+
+    @Test public void appLockExplainsDeviceAuthenticationWithoutCollectingCredentials() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            AtomicReference<AlertDialog> dialogReference = new AtomicReference<>();
+            scenario.onActivity(activity -> dialogReference.set(activity.showAppLockSettings()));
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            scenario.onActivity(activity -> {
+                AlertDialog dialog = dialogReference.get();
+                View root = dialog.getWindow().getDecorView();
+                assertVisibleText(root, "Turn on App lock?");
+                assertTrue(hasVisibleTextContaining(root, "fingerprint, face, PIN, pattern, or password"));
+                assertTrue(hasVisibleTextContaining(root, "never receives or stores"));
+                dialog.dismiss();
             });
         }
     }

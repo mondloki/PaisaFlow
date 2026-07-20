@@ -4,6 +4,9 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.DatePickerDialog;
+import android.app.KeyguardManager;
+import android.hardware.biometrics.BiometricManager;
+import android.hardware.biometrics.BiometricPrompt;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
@@ -16,6 +19,8 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.CancellationSignal;
+import android.os.SystemClock;
 import android.net.Uri;
 import android.text.Editable;
 import android.text.InputType;
@@ -66,6 +71,8 @@ public final class MainActivity extends Activity {
     private static final int BACKUP_EXPORT_REQUEST = 43;
     private static final int BACKUP_IMPORT_REQUEST = 44;
     private static final int TRANSACTION_IMPORT_REQUEST = 45;
+    private static final int DEVICE_CREDENTIAL_REQUEST = 46;
+    private static final long APP_LOCK_TIMEOUT_MILLIS = 60_000L;
     private static final int INK = 0xFF0B1220;
     private static final int INK_SOFT = 0xFF172033;
     private static final int PAPER = 0xFFF6F7F2;
@@ -121,6 +128,15 @@ public final class MainActivity extends Activity {
     private float drawerStartTranslation;
     private VelocityTracker drawerVelocity;
     private OnBackInvokedCallback backCallback;
+    private View lockOverlay;
+    private boolean appLockEnabled;
+    private boolean appAuthenticated;
+    private boolean authenticationInProgress;
+    private boolean authenticationUnlocksApp;
+    private boolean authenticationUsingCredential;
+    private long backgroundedAt;
+    private Runnable authenticationSuccess;
+    private CancellationSignal authenticationCancellation;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -129,6 +145,8 @@ public final class MainActivity extends Activity {
         window.setNavigationBarColor(INK);
         database = new LedgerDatabase(getApplicationContext());
         preferences = getSharedPreferences("display", MODE_PRIVATE);
+        appLockEnabled = preferences.getBoolean("app_lock_enabled", false);
+        appAuthenticated = !appLockEnabled;
         restoreDateSelection();
         setContentView(buildScreen());
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -144,9 +162,31 @@ public final class MainActivity extends Activity {
             getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);
         }
         if (drawerVelocity != null) drawerVelocity.recycle();
+        if (authenticationCancellation != null) authenticationCancellation.cancel();
         databaseExecutor.shutdown();
         database.close();
         super.onDestroy();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (!appLockEnabled || authenticationInProgress) return;
+        long awayFor = backgroundedAt == 0L ? Long.MAX_VALUE : SystemClock.elapsedRealtime() - backgroundedAt;
+        if (appAuthenticated && awayFor < APP_LOCK_TIMEOUT_MILLIS) {
+            hideLockOverlay();
+        } else {
+            appAuthenticated = false;
+            showLockOverlay();
+            mainHandler.post(() -> requestDeviceAuthentication("Unlock PaisaFlow", () -> { }, true));
+        }
+    }
+
+    @Override protected void onPause() {
+        if (appLockEnabled && !authenticationInProgress) {
+            backgroundedAt = SystemClock.elapsedRealtime();
+            showLockOverlay();
+        }
+        super.onPause();
     }
 
     private View buildScreen() {
@@ -317,9 +357,43 @@ public final class MainActivity extends Activity {
         root.addView(screenHost, new LinearLayout.LayoutParams(-1, 0, 1f));
         shell.addView(root, frameMatch());
         addDrawer(shell);
+        addLockOverlay(shell);
         updateModeAppearance();
         updateFlowAppearance();
         return shell;
+    }
+
+    private void addLockOverlay(FrameLayout shell) {
+        LinearLayout overlay = column(this);
+        overlay.setGravity(Gravity.CENTER);
+        overlay.setPadding(dp(30), dp(30), dp(30), dp(30));
+        overlay.setBackgroundColor(INK);
+        TextView mark = text("₹", 30, INK, Typeface.BOLD);
+        mark.setGravity(Gravity.CENTER);
+        mark.setBackground(roundRect(EMERALD, dp(18)));
+        overlay.addView(mark, size(dp(64), dp(64)));
+        TextView title = text("PaisaFlow is locked", 22, WHITE, Typeface.BOLD);
+        title.setGravity(Gravity.CENTER);
+        title.setPadding(0, dp(22), 0, dp(6));
+        overlay.addView(title, matchWrap());
+        TextView message = text("Authenticate with your phone to continue", 13, 0xFFB8C1CF, Typeface.NORMAL);
+        message.setGravity(Gravity.CENTER);
+        overlay.addView(message, matchWrap());
+        Button unlock = new Button(this);
+        unlock.setText("Unlock");
+        unlock.setTextSize(15);
+        unlock.setTextColor(INK);
+        unlock.setAllCaps(false);
+        unlock.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        unlock.setBackground(roundRect(EMERALD, dp(14)));
+        unlock.setOnClickListener(v -> requestDeviceAuthentication("Unlock PaisaFlow", () -> { }, true));
+        LinearLayout.LayoutParams buttonParams = new LinearLayout.LayoutParams(dp(180), dp(50));
+        buttonParams.setMargins(0, dp(24), 0, 0);
+        overlay.addView(unlock, buttonParams);
+        overlay.setVisibility(appLockEnabled ? View.VISIBLE : View.GONE);
+        overlay.setContentDescription("PaisaFlow authentication required");
+        shell.addView(overlay, frameMatch());
+        lockOverlay = overlay;
     }
 
     @SuppressWarnings("deprecation")
@@ -566,6 +640,7 @@ public final class MainActivity extends Activity {
         title.setPadding(dp(4), 0, 0, dp(12));
         screen.addView(title, matchWrap());
         addSettingsRow(screen, "₹", "Opening balance", v -> showOpeningBalanceDialog(false));
+        addSettingsRow(screen, "●", "App lock", v -> showAppLockSettings());
         addSettingsRow(screen, "⇅", "Backup", v -> showScreen("backup"));
 
         TextView privacyBody = text("PaisaFlow does not transmit your data. A file provider you select may sync exported files.",
@@ -595,6 +670,174 @@ public final class MainActivity extends Activity {
         screen.addView(privacyBody, matchWrap());
         scroll.addView(screen, new FrameLayout.LayoutParams(-1, -2));
         return scroll;
+    }
+
+    AlertDialog showAppLockSettings() {
+        if (!appLockEnabled) {
+            AlertDialog dialog = new AlertDialog.Builder(this)
+                    .setTitle("Turn on App lock?")
+                    .setMessage("PaisaFlow will use your phone's fingerprint, face, PIN, pattern, or password. It never receives or stores those credentials.")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Turn on", (ignored, which) ->
+                            requestDeviceAuthentication("Turn on PaisaFlow App lock", this::enableAppLock, false))
+                    .create();
+            dialog.show();
+            return dialog;
+        }
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("App lock is on")
+                .setMessage("PaisaFlow locks after one minute away and protects sensitive data actions.")
+                .setNegativeButton("Close", null)
+                .setNeutralButton("Turn off", (ignored, which) ->
+                        requestDeviceAuthentication("Turn off PaisaFlow App lock", this::disableAppLock, false))
+                .setPositiveButton("Lock now", (ignored, which) -> lockAppNow())
+                .create();
+        dialog.show();
+        return dialog;
+    }
+
+    private void enableAppLock() {
+        appLockEnabled = true;
+        appAuthenticated = true;
+        backgroundedAt = SystemClock.elapsedRealtime();
+        preferences.edit().putBoolean("app_lock_enabled", true).apply();
+        hideLockOverlay();
+        Toast.makeText(this, "App lock turned on", Toast.LENGTH_SHORT).show();
+        if ("settings".equals(activeScreen)) showScreen("settings");
+    }
+
+    private void disableAppLock() {
+        appLockEnabled = false;
+        appAuthenticated = true;
+        backgroundedAt = 0L;
+        preferences.edit().remove("app_lock_enabled").apply();
+        hideLockOverlay();
+        Toast.makeText(this, "App lock turned off", Toast.LENGTH_SHORT).show();
+        if ("settings".equals(activeScreen)) showScreen("settings");
+    }
+
+    private void lockAppNow() {
+        appAuthenticated = false;
+        backgroundedAt = 0L;
+        showLockOverlay();
+        requestDeviceAuthentication("Unlock PaisaFlow", () -> { }, true);
+    }
+
+    private void authenticateSensitiveAction(String reason, Runnable action) {
+        if (!appLockEnabled) {
+            action.run();
+            return;
+        }
+        requestDeviceAuthentication(reason, action, false);
+    }
+
+    private void requestDeviceAuthentication(String reason, Runnable onSuccess, boolean unlocksApp) {
+        if (authenticationInProgress) return;
+        KeyguardManager keyguard = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+        if (keyguard == null || !keyguard.isDeviceSecure()) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Secure screen lock required")
+                    .setMessage("Set a PIN, pattern, password, fingerprint, or face lock in Android Settings before using PaisaFlow App lock.")
+                    .setPositiveButton("OK", null)
+                    .show();
+            return;
+        }
+        authenticationInProgress = true;
+        authenticationUnlocksApp = unlocksApp;
+        authenticationSuccess = onSuccess;
+        if (unlocksApp) showLockOverlay();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            showBiometricPrompt(reason);
+        } else {
+            launchDeviceCredential(reason);
+        }
+    }
+
+    @android.annotation.TargetApi(Build.VERSION_CODES.P)
+    @SuppressWarnings("deprecation")
+    private void showBiometricPrompt(String reason) {
+        java.util.concurrent.Executor executor = command -> mainHandler.post(command);
+        BiometricPrompt.Builder builder = new BiometricPrompt.Builder(this)
+                .setTitle("PaisaFlow")
+                .setSubtitle(reason);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            builder.setAllowedAuthenticators(
+                    BiometricManager.Authenticators.BIOMETRIC_STRONG
+                            | BiometricManager.Authenticators.DEVICE_CREDENTIAL);
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            builder.setDeviceCredentialAllowed(true);
+        } else {
+            builder.setNegativeButton("Use screen lock", executor,
+                    (dialog, which) -> launchDeviceCredential(reason));
+        }
+        authenticationCancellation = new CancellationSignal();
+        builder.build().authenticate(authenticationCancellation, executor,
+                new BiometricPrompt.AuthenticationCallback() {
+                    @Override public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult result) {
+                        completeDeviceAuthentication();
+                    }
+
+                    @Override public void onAuthenticationError(int errorCode, CharSequence errorMessage) {
+                        if (authenticationUsingCredential) return;
+                        if (Build.VERSION.SDK_INT == Build.VERSION_CODES.P
+                                && (errorCode == BiometricPrompt.BIOMETRIC_ERROR_NO_BIOMETRICS
+                                || errorCode == BiometricPrompt.BIOMETRIC_ERROR_HW_NOT_PRESENT
+                                || errorCode == BiometricPrompt.BIOMETRIC_ERROR_HW_UNAVAILABLE)) {
+                            launchDeviceCredential(reason);
+                        } else {
+                            cancelDeviceAuthentication();
+                        }
+                    }
+                });
+    }
+
+    @SuppressWarnings("deprecation")
+    private void launchDeviceCredential(String reason) {
+        KeyguardManager keyguard = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+        Intent intent = keyguard == null ? null
+                : keyguard.createConfirmDeviceCredentialIntent("PaisaFlow", reason);
+        if (intent == null) {
+            cancelDeviceAuthentication();
+            Toast.makeText(this, "Device authentication is unavailable", Toast.LENGTH_LONG).show();
+            return;
+        }
+        authenticationUsingCredential = true;
+        startActivityForResult(intent, DEVICE_CREDENTIAL_REQUEST);
+    }
+
+    private void completeDeviceAuthentication() {
+        Runnable success = authenticationSuccess;
+        authenticationInProgress = false;
+        authenticationUnlocksApp = false;
+        authenticationUsingCredential = false;
+        authenticationSuccess = null;
+        authenticationCancellation = null;
+        appAuthenticated = true;
+        backgroundedAt = SystemClock.elapsedRealtime();
+        hideLockOverlay();
+        if (success != null) success.run();
+    }
+
+    private void cancelDeviceAuthentication() {
+        boolean wasUnlockingApp = authenticationUnlocksApp;
+        authenticationInProgress = false;
+        authenticationUnlocksApp = false;
+        authenticationUsingCredential = false;
+        authenticationSuccess = null;
+        authenticationCancellation = null;
+        if (wasUnlockingApp && appLockEnabled) showLockOverlay();
+    }
+
+    private void showLockOverlay() {
+        if (lockOverlay != null && appLockEnabled) {
+            lockOverlay.setVisibility(View.VISIBLE);
+            lockOverlay.bringToFront();
+        }
+    }
+
+    private void hideLockOverlay() {
+        if (lockOverlay != null) lockOverlay.setVisibility(View.GONE);
     }
 
     private void addDangerSettingsRow(LinearLayout parent, String title, View.OnClickListener listener) {
@@ -1336,11 +1579,20 @@ public final class MainActivity extends Activity {
             boolean fullData = full.isChecked();
             dialog.dismiss();
             if (action == DataAction.EXPORT) {
-                if (fullData) requestBackupExport(); else requestTransactionExport();
+                if (fullData) {
+                    authenticateSensitiveAction("Confirm full data export", this::requestBackupExport);
+                } else {
+                    requestTransactionExport();
+                }
             } else if (action == DataAction.IMPORT) {
-                if (fullData) requestBackupImport(); else requestTransactionImport();
+                if (fullData) {
+                    authenticateSensitiveAction("Confirm full data import", this::requestBackupImport);
+                } else {
+                    requestTransactionImport();
+                }
             } else {
-                showFinalEraseConfirmation(fullData);
+                authenticateSensitiveAction("Confirm irreversible data erasure",
+                        () -> showFinalEraseConfirmation(fullData));
             }
         }));
         dialog.show();
@@ -1430,6 +1682,10 @@ public final class MainActivity extends Activity {
                     if (fullData) {
                         activePreset = DateRanges.Preset.MONTH;
                         dateWindow = DateRanges.forPreset(activePreset);
+                        appLockEnabled = false;
+                        appAuthenticated = true;
+                        backgroundedAt = 0L;
+                        hideLockOverlay();
                         openingPromptChecked = false;
                         hasOpeningBalance = false;
                         openingBalanceMinor = 0L;
@@ -1475,6 +1731,11 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == DEVICE_CREDENTIAL_REQUEST) {
+            if (resultCode == RESULT_OK) completeDeviceAuthentication();
+            else cancelDeviceAuthentication();
+            return;
+        }
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
         Uri document = data.getData();
         if (requestCode == EXPORT_REQUEST) writeCsv(document);
