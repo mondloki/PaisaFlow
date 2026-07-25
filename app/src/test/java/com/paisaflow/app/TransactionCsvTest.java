@@ -1,6 +1,7 @@
 package com.paisaflow.app;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThrows;
 
 import org.junit.Test;
 
@@ -22,5 +23,16 @@ public final class TransactionCsvTest {
         TransactionCsv.Parsed parsed = TransactionCsv.parse(
                 "Date,Category,Type,Amount INR,Note\n20 Jul 2026,Salary,Credit,50000.00,Pay\n");
         assertEquals(20260720, parsed.rows.get(0).dateKey);
+    }
+
+    @Test public void acceptsStrictDayMonthYearDate() {
+        TransactionCsv.Parsed parsed = TransactionCsv.parse(
+                "Date,Category,Type,Amount INR,Note\n26-02-2022,Food,Expense,500.00,Groceries\n");
+        assertEquals(20220226, parsed.rows.get(0).dateKey);
+    }
+
+    @Test public void rejectsImpossibleDayMonthYearDate() {
+        assertThrows(IllegalArgumentException.class, () -> TransactionCsv.parse(
+                "Date,Category,Type,Amount INR,Note\n31-02-2022,Food,Expense,500.00,Groceries\n"));
     }
 }

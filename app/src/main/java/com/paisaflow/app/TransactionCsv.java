@@ -104,6 +104,11 @@ final class TransactionCsv {
             int key = Integer.parseInt(trimmed.substring(0, 4) + trimmed.substring(5, 7) + trimmed.substring(8, 10));
             if (validDate(key)) return key;
         }
+        if (trimmed.matches("\\d{2}-\\d{2}-\\d{4}")) {
+            int key = Integer.parseInt(trimmed.substring(6, 10)
+                    + trimmed.substring(3, 5) + trimmed.substring(0, 2));
+            if (validDate(key)) return key;
+        }
         String[] patterns = {"d MMM yyyy", "dd MMM yyyy"};
         Locale[] locales = {Locale.getDefault(), Locale.ENGLISH};
         for (Locale locale : locales) {
