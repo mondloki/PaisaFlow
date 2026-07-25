@@ -18,7 +18,7 @@ import org.json.JSONObject;
 
 final class LedgerDatabase extends SQLiteOpenHelper {
     private static final String DB_NAME = "paisaflow.db";
-    private static final int DB_VERSION = 3;
+    private static final int DB_VERSION = 4;
 
     LedgerDatabase(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
@@ -79,13 +79,18 @@ final class LedgerDatabase extends SQLiteOpenHelper {
             updateIcon(db, "Dividends", "dividend");
             seed(db);
         }
+        if (oldVersion < 4) {
+            seed(db);
+            markCurrentStandardCategories(db);
+        }
     }
 
     List<LedgerModels.Category> categories() {
         ArrayList<LedgerModels.Category> result = new ArrayList<>();
         try (Cursor cursor = getReadableDatabase().rawQuery(
                 "SELECT id,name,flow,icon,color,standard FROM categories WHERE active=1 " +
-                        "ORDER BY CASE flow WHEN 'EXPENSE' THEN 0 WHEN 'INVESTMENT' THEN 1 ELSE 2 END,name", null)) {
+                        "ORDER BY CASE flow WHEN 'EXPENSE' THEN 0 WHEN 'INVESTMENT' THEN 1 ELSE 2 END," +
+                        "name COLLATE NOCASE ASC", null)) {
             while (cursor.moveToNext()) result.add(readCategory(cursor, 0));
         }
         return result;
@@ -557,16 +562,23 @@ final class LedgerDatabase extends SQLiteOpenHelper {
             addSeed(db, "Loan EMI", LedgerModels.EXPENSE, "bank", 0xFF8D6E63);
             addSeed(db, "Other Bills", LedgerModels.EXPENSE, "receipt", 0xFF607D8B);
             addSeed(db, "Miscellaneous Expense", LedgerModels.EXPENSE, "dots", 0xFF607D8B);
+            addSeed(db, "Grocery", LedgerModels.EXPENSE, "bag", 0xFF43AA8B);
             addSeed(db, "Stocks", LedgerModels.INVESTMENT, "chart", 0xFF2A9D8F);
             addSeed(db, "Bonds", LedgerModels.INVESTMENT, "bond", 0xFF52796F);
             addSeed(db, "Mutual Funds", LedgerModels.INVESTMENT, "layers", 0xFF3A86FF);
             addSeed(db, "F & O", LedgerModels.INVESTMENT, "swap", 0xFF8338EC);
             addSeed(db, "Miscellaneous Investment", LedgerModels.INVESTMENT, "dots", 0xFF6C63A8);
+            addSeed(db, "Real Estate", LedgerModels.INVESTMENT, "home", 0xFF9B5DE5);
+            addSeed(db, "Fixed Deposit", LedgerModels.INVESTMENT, "bank", 0xFF8D6E63);
+            addSeed(db, "Lend", LedgerModels.INVESTMENT, "send", 0xFF4361EE);
             addSeed(db, "Salary", LedgerModels.CREDIT, "rupee", 0xFF20C997);
             addSeed(db, "Bond Interest", LedgerModels.CREDIT, "percent", 0xFF4CAF50);
             addSeed(db, "Dividends", LedgerModels.CREDIT, "dividend", 0xFF06A77D);
             addSeed(db, "Deposit", LedgerModels.CREDIT, "piggy", 0xFF009688);
             addSeed(db, "Miscellaneous Credit", LedgerModels.CREDIT, "dots", 0xFF3F8F74);
+            addSeed(db, "Investment deficit", LedgerModels.CREDIT, "chart", 0xFF6C63A8);
+            addSeed(db, "FD Interest", LedgerModels.CREDIT, "percent", 0xFF2A9D8F);
+            addSeed(db, "Lend Interest", LedgerModels.CREDIT, "percent", 0xFF06A77D);
             db.setTransactionSuccessful();
         } finally {
             db.endTransaction();
@@ -588,10 +600,13 @@ final class LedgerDatabase extends SQLiteOpenHelper {
         String[] expenseNames = {
                 "Food", "Transport", "Shopping", "Health", "Money Transfer", "Electricity",
                 "Internet & Broadband", "Mobile", "Water", "Gas", "Rent", "Home Maintenance",
-                "Insurance", "Credit Card Bill", "Loan EMI", "Other Bills", "Miscellaneous Expense"
+                "Insurance", "Credit Card Bill", "Loan EMI", "Other Bills", "Miscellaneous Expense",
+                "Grocery"
         };
-        String[] investmentNames = {"Stocks", "Bonds", "Mutual Funds", "F & O", "Miscellaneous Investment"};
-        String[] creditNames = {"Salary", "Bond Interest", "Dividends", "Deposit", "Miscellaneous Credit"};
+        String[] investmentNames = {"Stocks", "Bonds", "Mutual Funds", "F & O",
+                "Miscellaneous Investment", "Real Estate", "Fixed Deposit", "Lend"};
+        String[] creditNames = {"Salary", "Bond Interest", "Dividends", "Deposit",
+                "Miscellaneous Credit", "Investment deficit", "FD Interest", "Lend Interest"};
         ContentValues values = new ContentValues(1);
         values.put("standard", 1);
         markStandardCategories(db, values, expenseNames, LedgerModels.EXPENSE);
@@ -613,11 +628,13 @@ final class LedgerDatabase extends SQLiteOpenHelper {
             names = new String[]{"Food", "Transport", "Shopping", "Health", "Money Transfer",
                     "Electricity", "Internet & Broadband", "Mobile", "Water", "Gas", "Rent",
                     "Home Maintenance", "Insurance", "Credit Card Bill", "Loan EMI", "Other Bills",
-                    "Miscellaneous Expense"};
+                    "Miscellaneous Expense", "Grocery"};
         } else if (LedgerModels.INVESTMENT.equals(flow)) {
-            names = new String[]{"Stocks", "Bonds", "Mutual Funds", "F & O", "Miscellaneous Investment"};
+            names = new String[]{"Stocks", "Bonds", "Mutual Funds", "F & O",
+                    "Miscellaneous Investment", "Real Estate", "Fixed Deposit", "Lend"};
         } else {
-            names = new String[]{"Salary", "Bond Interest", "Dividends", "Deposit", "Miscellaneous Credit"};
+            names = new String[]{"Salary", "Bond Interest", "Dividends", "Deposit",
+                    "Miscellaneous Credit", "Investment deficit", "FD Interest", "Lend Interest"};
         }
         for (String standardName : names) if (standardName.equalsIgnoreCase(name)) return true;
         return false;

@@ -55,9 +55,26 @@ public final class LedgerDatabaseDeviceTest {
         assertNotNull(find(categories, "Miscellaneous Expense"));
         assertNotNull(find(categories, "Miscellaneous Investment"));
         assertNotNull(find(categories, "Miscellaneous Credit"));
+        assertTrue(find(categories, "Grocery").standard);
+        assertTrue(find(categories, "Real Estate").standard);
+        assertTrue(find(categories, "Fixed Deposit").standard);
+        assertTrue(find(categories, "Lend").standard);
+        assertTrue(find(categories, "Investment deficit").standard);
+        assertTrue(find(categories, "FD Interest").standard);
+        assertTrue(find(categories, "Lend Interest").standard);
+        assertCategoriesAreAlphabeticalWithinEachFlow(categories);
         assertFalse(contains(categories, "Subscriptions"));
         assertFalse(contains(categories, "Refund"));
         assertEquals(123_45L, database.openingBalance());
+    }
+
+    @Test public void categoriesAreAlphabeticalWithinEachFlow() {
+        database = new LedgerDatabase(context);
+        database.addCategory("Aardvark Expense", LedgerModels.EXPENSE, "dots", 0xFF607D8B);
+        database.addCategory("Aardvark Investment", LedgerModels.INVESTMENT, "dots", 0xFF607D8B);
+        database.addCategory("Aardvark Credit", LedgerModels.CREDIT, "dots", 0xFF607D8B);
+
+        assertCategoriesAreAlphabeticalWithinEachFlow(database.categories());
     }
 
     @Test public void customCategoryRecordsCanMoveButStandardCategoryCannotBeDeleted() {
@@ -177,5 +194,21 @@ public final class LedgerDatabaseDeviceTest {
     private static boolean contains(List<LedgerModels.Category> categories, String name) {
         for (LedgerModels.Category category : categories) if (name.equals(category.name)) return true;
         return false;
+    }
+
+    private static void assertCategoriesAreAlphabeticalWithinEachFlow(
+            List<LedgerModels.Category> categories) {
+        String[] flows = {LedgerModels.EXPENSE, LedgerModels.INVESTMENT, LedgerModels.CREDIT};
+        for (String flow : flows) {
+            String previous = null;
+            for (LedgerModels.Category category : categories) {
+                if (!flow.equals(category.flow)) continue;
+                if (previous != null) {
+                    assertTrue(previous + " should sort before " + category.name,
+                            previous.compareToIgnoreCase(category.name) <= 0);
+                }
+                previous = category.name;
+            }
+        }
     }
 }
