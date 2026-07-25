@@ -61,13 +61,18 @@ public final class LedgerDatabaseDeviceTest {
         assertTrue(find(categories, "Real Estate").standard);
         assertTrue(find(categories, "Fixed Deposit").standard);
         assertTrue(find(categories, "Lend").standard);
-        assertTrue(find(categories, "Investment deficit").standard);
+        assertTrue(find(categories, "Investment Deficit").standard);
+        assertFalse(contains(categories, "Investment deficit"));
         assertTrue(find(categories, "FD Interest").standard);
         assertTrue(find(categories, "Lend Interest").standard);
         assertCategoriesAreAlphabeticalWithinEachFlow(categories);
         assertFalse(contains(categories, "Subscriptions"));
         assertFalse(contains(categories, "Refund"));
         assertEquals(123_45L, database.openingBalance());
+        LedgerModels.Snapshot migrated = database.snapshot(20260719, 20260719, 10);
+        assertEquals(1, migrated.entries.size());
+        assertEquals("Investment Deficit", migrated.entries.get(0).category.name);
+        assertEquals("preserved", migrated.entries.get(0).note);
     }
 
     @Test public void categoriesAreAlphabeticalWithinEachFlow() {
@@ -171,19 +176,25 @@ public final class LedgerDatabaseDeviceTest {
             addLegacyCategory(db, "Deposit", LedgerModels.CREDIT, "deposit");
             addLegacyCategory(db, "Dividends", LedgerModels.CREDIT, "coin");
             addLegacyCategory(db, "Refund", LedgerModels.CREDIT, "refund");
+            long deficitId = addLegacyCategory(
+                    db, "Investment deficit", LedgerModels.CREDIT, "chart");
+            db.execSQL("INSERT INTO entries(amount_minor,date_key,category_id,flow,note,created_at) " +
+                            "VALUES(?,?,?,?,?,?)",
+                    new Object[]{500_00L, 20260719, deficitId, LedgerModels.CREDIT,
+                            "preserved", 1784450000000L});
             db.execSQL("INSERT INTO app_settings(key,value) VALUES('opening_balance_minor','12345')");
             db.setVersion(2);
         }
     }
 
-    private static void addLegacyCategory(SQLiteDatabase db, String name, String flow, String icon) {
+    private static long addLegacyCategory(SQLiteDatabase db, String name, String flow, String icon) {
         ContentValues values = new ContentValues(5);
         values.put("name", name);
         values.put("flow", flow);
         values.put("icon", icon);
         values.put("color", 0xFF607D8B);
         values.put("active", 1);
-        db.insertOrThrow("categories", null, values);
+        return db.insertOrThrow("categories", null, values);
     }
 
     private static LedgerModels.Category find(List<LedgerModels.Category> categories, String name) {

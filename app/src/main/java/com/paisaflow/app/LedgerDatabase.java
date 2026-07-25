@@ -18,7 +18,7 @@ import org.json.JSONObject;
 
 final class LedgerDatabase extends SQLiteOpenHelper {
     private static final String DB_NAME = "paisaflow.db";
-    private static final int DB_VERSION = 5;
+    private static final int DB_VERSION = 6;
 
     LedgerDatabase(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
@@ -84,6 +84,13 @@ final class LedgerDatabase extends SQLiteOpenHelper {
             markCurrentStandardCategories(db);
         }
         if (oldVersion < 5) {
+            seed(db);
+            markCurrentStandardCategories(db);
+        }
+        if (oldVersion < 6) {
+            ContentValues values = new ContentValues(1);
+            values.put("name", "Investment Deficit");
+            db.update("categories", values, "name=?", new String[]{"Investment deficit"});
             seed(db);
             markCurrentStandardCategories(db);
         }
@@ -582,7 +589,7 @@ final class LedgerDatabase extends SQLiteOpenHelper {
             addSeed(db, "Dividends", LedgerModels.CREDIT, "dividend", 0xFF06A77D);
             addSeed(db, "Deposit", LedgerModels.CREDIT, "piggy", 0xFF009688);
             addSeed(db, "Miscellaneous Credit", LedgerModels.CREDIT, "dots", 0xFF3F8F74);
-            addSeed(db, "Investment deficit", LedgerModels.CREDIT, "chart", 0xFF6C63A8);
+            addSeed(db, "Investment Deficit", LedgerModels.CREDIT, "chart", 0xFF6C63A8);
             addSeed(db, "FD Interest", LedgerModels.CREDIT, "percent", 0xFF2A9D8F);
             addSeed(db, "Lend Interest", LedgerModels.CREDIT, "percent", 0xFF06A77D);
             db.setTransactionSuccessful();
@@ -612,7 +619,7 @@ final class LedgerDatabase extends SQLiteOpenHelper {
         String[] investmentNames = {"Stocks", "Bonds", "Mutual Funds", "F & O",
                 "Miscellaneous Investment", "Real Estate", "Fixed Deposit", "Lend"};
         String[] creditNames = {"Salary", "Bond Interest", "Dividends", "Deposit",
-                "Miscellaneous Credit", "Investment deficit", "FD Interest", "Lend Interest"};
+                "Miscellaneous Credit", "Investment Deficit", "FD Interest", "Lend Interest"};
         ContentValues values = new ContentValues(1);
         values.put("standard", 1);
         markStandardCategories(db, values, expenseNames, LedgerModels.EXPENSE);
@@ -640,7 +647,7 @@ final class LedgerDatabase extends SQLiteOpenHelper {
                     "Miscellaneous Investment", "Real Estate", "Fixed Deposit", "Lend"};
         } else {
             names = new String[]{"Salary", "Bond Interest", "Dividends", "Deposit",
-                    "Miscellaneous Credit", "Investment deficit", "FD Interest", "Lend Interest"};
+                    "Miscellaneous Credit", "Investment Deficit", "FD Interest", "Lend Interest"};
         }
         for (String standardName : names) if (standardName.equalsIgnoreCase(name)) return true;
         return false;
