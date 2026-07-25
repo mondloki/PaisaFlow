@@ -18,7 +18,7 @@ import org.json.JSONObject;
 
 final class LedgerDatabase extends SQLiteOpenHelper {
     private static final String DB_NAME = "paisaflow.db";
-    private static final int DB_VERSION = 4;
+    private static final int DB_VERSION = 5;
 
     LedgerDatabase(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
@@ -80,6 +80,10 @@ final class LedgerDatabase extends SQLiteOpenHelper {
             seed(db);
         }
         if (oldVersion < 4) {
+            seed(db);
+            markCurrentStandardCategories(db);
+        }
+        if (oldVersion < 5) {
             seed(db);
             markCurrentStandardCategories(db);
         }
@@ -563,6 +567,8 @@ final class LedgerDatabase extends SQLiteOpenHelper {
             addSeed(db, "Other Bills", LedgerModels.EXPENSE, "receipt", 0xFF607D8B);
             addSeed(db, "Miscellaneous Expense", LedgerModels.EXPENSE, "dots", 0xFF607D8B);
             addSeed(db, "Grocery", LedgerModels.EXPENSE, "bag", 0xFF43AA8B);
+            addSeed(db, "Learning", LedgerModels.EXPENSE, "layers", 0xFF6C63A8);
+            addSeed(db, "Tax", LedgerModels.EXPENSE, "receipt", 0xFFF4A261);
             addSeed(db, "Stocks", LedgerModels.INVESTMENT, "chart", 0xFF2A9D8F);
             addSeed(db, "Bonds", LedgerModels.INVESTMENT, "bond", 0xFF52796F);
             addSeed(db, "Mutual Funds", LedgerModels.INVESTMENT, "layers", 0xFF3A86FF);
@@ -601,7 +607,7 @@ final class LedgerDatabase extends SQLiteOpenHelper {
                 "Food", "Transport", "Shopping", "Health", "Money Transfer", "Electricity",
                 "Internet & Broadband", "Mobile", "Water", "Gas", "Rent", "Home Maintenance",
                 "Insurance", "Credit Card Bill", "Loan EMI", "Other Bills", "Miscellaneous Expense",
-                "Grocery"
+                "Grocery", "Learning", "Tax"
         };
         String[] investmentNames = {"Stocks", "Bonds", "Mutual Funds", "F & O",
                 "Miscellaneous Investment", "Real Estate", "Fixed Deposit", "Lend"};
@@ -628,7 +634,7 @@ final class LedgerDatabase extends SQLiteOpenHelper {
             names = new String[]{"Food", "Transport", "Shopping", "Health", "Money Transfer",
                     "Electricity", "Internet & Broadband", "Mobile", "Water", "Gas", "Rent",
                     "Home Maintenance", "Insurance", "Credit Card Bill", "Loan EMI", "Other Bills",
-                    "Miscellaneous Expense", "Grocery"};
+                    "Miscellaneous Expense", "Grocery", "Learning", "Tax"};
         } else if (LedgerModels.INVESTMENT.equals(flow)) {
             names = new String[]{"Stocks", "Bonds", "Mutual Funds", "F & O",
                     "Miscellaneous Investment", "Real Estate", "Fixed Deposit", "Lend"};

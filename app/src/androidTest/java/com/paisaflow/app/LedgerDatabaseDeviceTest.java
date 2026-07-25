@@ -56,6 +56,8 @@ public final class LedgerDatabaseDeviceTest {
         assertNotNull(find(categories, "Miscellaneous Investment"));
         assertNotNull(find(categories, "Miscellaneous Credit"));
         assertTrue(find(categories, "Grocery").standard);
+        assertTrue(find(categories, "Learning").standard);
+        assertTrue(find(categories, "Tax").standard);
         assertTrue(find(categories, "Real Estate").standard);
         assertTrue(find(categories, "Fixed Deposit").standard);
         assertTrue(find(categories, "Lend").standard);
