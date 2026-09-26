@@ -10,6 +10,19 @@ import android.util.AttributeSet;
 import android.view.View;
 
 final class CategoryIconView extends View {
+    private static final RectF BACKGROUND_BOUNDS = new RectF(0, 0, 48, 48);
+    private static final RectF BOND_BOUNDS = new RectF(11, 14, 37, 34);
+    private static final RectF WIFI_OUTER_BOUNDS = new RectF(9, 13, 39, 39);
+    private static final RectF WIFI_INNER_BOUNDS = new RectF(15, 20, 33, 37);
+    private static final RectF PHONE_BOUNDS = new RectF(16, 9, 32, 39);
+    private static final RectF HOME_DOOR_BOUNDS = new RectF(21, 28, 27, 37);
+    private static final RectF REPEAT_TOP_BOUNDS = new RectF(11, 13, 37, 34);
+    private static final RectF REPEAT_BOTTOM_BOUNDS = new RectF(11, 15, 37, 36);
+    private static final RectF CARD_BOUNDS = new RectF(9, 14, 39, 35);
+    private static final RectF BAG_BOUNDS = new RectF(12, 17, 36, 38);
+    private static final RectF BAG_HANDLE_BOUNDS = new RectF(18, 9, 30, 24);
+    private static final RectF REFUND_BOUNDS = new RectF(11, 11, 37, 37);
+    private static final RectF COIN_DETAIL_BOUNDS = new RectF(19, 17, 29, 24);
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path = new Path();
     private String icon = "dot";
@@ -35,7 +48,7 @@ final class CategoryIconView extends View {
 
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(iconColor);
-        canvas.drawRoundRect(new RectF(0, 0, 48, 48), 14, 14, paint);
+        canvas.drawRoundRect(BACKGROUND_BOUNDS, 14, 14, paint);
         paint.setColor(Color.WHITE);
         paint.setStrokeWidth(3f);
         paint.setStrokeCap(Paint.Cap.ROUND);
@@ -49,7 +62,7 @@ final class CategoryIconView extends View {
                 canvas.drawPath(path, paint); canvas.drawLine(30, 16, 37, 16, paint); canvas.drawLine(37, 16, 37, 23, paint);
                 break;
             case "bond":
-                canvas.drawRoundRect(new RectF(11, 14, 37, 34), 3, 3, paint);
+                canvas.drawRoundRect(BOND_BOUNDS, 3, 3, paint);
                 canvas.drawCircle(24, 24, 5, paint); canvas.drawLine(14, 19, 18, 19, paint); canvas.drawLine(30, 29, 34, 29, paint);
                 break;
             case "layers":
@@ -72,10 +85,10 @@ final class CategoryIconView extends View {
                 path.moveTo(27, 9); path.lineTo(15, 27); path.lineTo(23, 27); path.lineTo(20, 39); path.lineTo(34, 20); path.lineTo(26, 20); path.close();
                 canvas.drawPath(path, paint); break;
             case "wifi":
-                canvas.drawArc(new RectF(9, 13, 39, 39), 220, 100, false, paint);
-                canvas.drawArc(new RectF(15, 20, 33, 37), 220, 100, false, paint); canvas.drawCircle(24, 33, 1.5f, paint); break;
+                canvas.drawArc(WIFI_OUTER_BOUNDS, 220, 100, false, paint);
+                canvas.drawArc(WIFI_INNER_BOUNDS, 220, 100, false, paint); canvas.drawCircle(24, 33, 1.5f, paint); break;
             case "phone":
-                canvas.drawRoundRect(new RectF(16, 9, 32, 39), 3, 3, paint); canvas.drawLine(21, 13, 27, 13, paint); canvas.drawCircle(24, 34, 1, paint); break;
+                canvas.drawRoundRect(PHONE_BOUNDS, 3, 3, paint); canvas.drawLine(21, 13, 27, 13, paint); canvas.drawCircle(24, 34, 1, paint); break;
             case "water":
                 path.moveTo(24, 9); path.cubicTo(18, 18, 14, 23, 14, 29); path.cubicTo(14, 37, 34, 37, 34, 29); path.cubicTo(34, 23, 30, 18, 24, 9); path.close();
                 canvas.drawPath(path, paint); break;
@@ -84,17 +97,17 @@ final class CategoryIconView extends View {
                 canvas.drawPath(path, paint); break;
             case "home":
                 path.moveTo(9, 24); path.lineTo(24, 11); path.lineTo(39, 24); path.moveTo(14, 22); path.lineTo(14, 37); path.lineTo(34, 37); path.lineTo(34, 22);
-                canvas.drawPath(path, paint); canvas.drawRect(new RectF(21, 28, 27, 37), paint); break;
+                canvas.drawPath(path, paint); canvas.drawRect(HOME_DOOR_BOUNDS, paint); break;
             case "tools":
                 canvas.drawLine(13, 35, 34, 14, paint); canvas.drawCircle(12, 36, 3, paint); canvas.drawLine(15, 13, 36, 34, paint); canvas.drawCircle(36, 35, 3, paint); break;
             case "shield":
                 path.moveTo(24, 9); path.lineTo(36, 14); path.lineTo(34, 29); path.quadTo(31, 36, 24, 39); path.quadTo(17, 36, 14, 29); path.lineTo(12, 14); path.close();
                 canvas.drawPath(path, paint); canvas.drawLine(18, 24, 22, 28, paint); canvas.drawLine(22, 28, 30, 20, paint); break;
             case "repeat":
-                canvas.drawArc(new RectF(11, 13, 37, 34), 205, 225, false, paint); canvas.drawLine(12, 15, 12, 23, paint); canvas.drawLine(12, 15, 20, 15, paint);
-                canvas.drawArc(new RectF(11, 15, 37, 36), 25, 225, false, paint); canvas.drawLine(36, 33, 36, 25, paint); canvas.drawLine(36, 33, 28, 33, paint); break;
+                canvas.drawArc(REPEAT_TOP_BOUNDS, 205, 225, false, paint); canvas.drawLine(12, 15, 12, 23, paint); canvas.drawLine(12, 15, 20, 15, paint);
+                canvas.drawArc(REPEAT_BOTTOM_BOUNDS, 25, 225, false, paint); canvas.drawLine(36, 33, 36, 25, paint); canvas.drawLine(36, 33, 28, 33, paint); break;
             case "card":
-                canvas.drawRoundRect(new RectF(9, 14, 39, 35), 3, 3, paint); canvas.drawLine(10, 21, 38, 21, paint); canvas.drawLine(14, 29, 22, 29, paint); break;
+                canvas.drawRoundRect(CARD_BOUNDS, 3, 3, paint); canvas.drawLine(10, 21, 38, 21, paint); canvas.drawLine(14, 29, 22, 29, paint); break;
             case "bank":
                 path.moveTo(9, 18); path.lineTo(24, 10); path.lineTo(39, 18); path.close(); canvas.drawPath(path, paint);
                 canvas.drawLine(12, 36, 36, 36, paint); canvas.drawLine(15, 21, 15, 33, paint); canvas.drawLine(24, 21, 24, 33, paint); canvas.drawLine(33, 21, 33, 33, paint); break;
@@ -104,7 +117,7 @@ final class CategoryIconView extends View {
             case "health":
                 canvas.drawLine(24, 13, 24, 35, paint); canvas.drawLine(13, 24, 35, 24, paint); break;
             case "bag":
-                canvas.drawRoundRect(new RectF(12, 17, 36, 38), 3, 3, paint); canvas.drawArc(new RectF(18, 9, 30, 24), 180, 180, false, paint); break;
+                canvas.drawRoundRect(BAG_BOUNDS, 3, 3, paint); canvas.drawArc(BAG_HANDLE_BOUNDS, 180, 180, false, paint); break;
             case "send":
                 path.moveTo(9, 12); path.lineTo(40, 23); path.lineTo(27, 28); path.lineTo(21, 39); path.lineTo(19, 27); path.close(); canvas.drawPath(path, paint); break;
             case "deposit":
@@ -121,13 +134,13 @@ final class CategoryIconView extends View {
                 canvas.drawLine(24, 17, 24, 31, paint);
                 break;
             case "refund":
-                canvas.drawArc(new RectF(11, 11, 37, 37), 45, 285, false, paint); canvas.drawLine(11, 14, 11, 23, paint); canvas.drawLine(11, 14, 20, 14, paint); break;
+                canvas.drawArc(REFUND_BOUNDS, 45, 285, false, paint); canvas.drawLine(11, 14, 11, 23, paint); canvas.drawLine(11, 14, 20, 14, paint); break;
             case "rupee":
                 drawTextIcon(canvas, "₹", 27); break;
             case "percent":
                 drawTextIcon(canvas, "%", 25); break;
             case "coin":
-                canvas.drawCircle(24, 24, 13, paint); canvas.drawCircle(24, 24, 9, paint); canvas.drawLine(24, 17, 24, 31, paint); canvas.drawArc(new RectF(19, 17, 29, 24), 90, 240, false, paint); break;
+                canvas.drawCircle(24, 24, 13, paint); canvas.drawCircle(24, 24, 9, paint); canvas.drawLine(24, 17, 24, 31, paint); canvas.drawArc(COIN_DETAIL_BOUNDS, 90, 240, false, paint); break;
             case "dots":
                 paint.setStyle(Paint.Style.FILL);
                 canvas.drawCircle(15, 24, 3, paint); canvas.drawCircle(24, 24, 3, paint); canvas.drawCircle(33, 24, 3, paint);

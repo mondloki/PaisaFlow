@@ -368,6 +368,7 @@ public final class MainActivity extends Activity {
         donutPanel.setVisibility(View.GONE);
         LinearLayout flowRow = row(this);
         flowRow.setPadding(0, dp(7), 0, 0);
+        flowButtons.clear();
         addFlowButton(flowRow, "Expenses", LedgerModels.EXPENSE);
         addFlowButton(flowRow, "Investments", LedgerModels.INVESTMENT);
         addFlowButton(flowRow, "Credits", LedgerModels.CREDIT);
@@ -424,7 +425,7 @@ public final class MainActivity extends Activity {
         shell.addView(root, frameMatch());
         addDrawer(shell);
         addLockOverlay(shell);
-        updateModeAppearance();
+        applyDashboardModeState();
         updateFlowAppearance();
         return shell;
     }
@@ -991,12 +992,17 @@ public final class MainActivity extends Activity {
 
     private void setCategoryMode(boolean categoriesMode) {
         categoryMode = categoriesMode;
+        applyDashboardModeState();
+        reload();
+    }
+
+    private void applyDashboardModeState() {
+        if (summaryPanel == null || donutPanel == null || listView == null) return;
         summaryPanel.setVisibility(categoryMode ? View.GONE : View.VISIBLE);
         donutPanel.setVisibility(categoryMode ? View.VISIBLE : View.GONE);
         listView.setAdapter(categoryMode ? categoryTotalAdapter : entryAdapter);
         if (searchButton != null) searchButton.setVisibility(categoryMode ? View.GONE : View.VISIBLE);
         updateModeAppearance();
-        reload();
     }
 
     private void updateModeAppearance() {
@@ -1044,7 +1050,7 @@ public final class MainActivity extends Activity {
     private void updateFlowAppearance() {
         for (Button button : flowButtons) {
             boolean selected = breakdownFlow.equals(button.getTag());
-            button.setTextColor(selected ? WHITE : INK_SOFT);
+            button.setTextColor(selected ? WHITE : INK);
             button.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
             button.setBackground(roundRect(selected ? flowAccent(breakdownFlow) : CONTROL, dp(16)));
         }
@@ -1220,7 +1226,8 @@ public final class MainActivity extends Activity {
         boolean active = hasTransactionSearch();
         button.setText(active ? "Filters  •" : "⌕  Search");
         button.setTextColor(active ? WHITE : INK);
-        button.setBackground(roundRect(active ? EMERALD : SURFACE, dp(12), BORDER, dp(1)));
+        int outline = darkMode ? BORDER : 0xFFC9CEC7;
+        button.setBackground(roundRect(active ? EMERALD : SURFACE, dp(12), outline, dp(1)));
     }
 
     private void showTransactionSearch() {
@@ -1463,6 +1470,8 @@ public final class MainActivity extends Activity {
         field.setThreshold(0);
         field.setPadding(dp(12), 0, dp(12), 0);
         field.setBackground(roundRect(FIELD, dp(10), BORDER, dp(1)));
+        field.setDropDownBackgroundDrawable(roundRect(SURFACE, dp(8), BORDER, dp(1)));
+        field.setDropDownVerticalOffset(dp(4));
         field.setOnClickListener(v -> field.showDropDown());
         return field;
     }
@@ -1471,10 +1480,38 @@ public final class MainActivity extends Activity {
         databaseExecutor.execute(() -> {
             List<String> suggestions = database.noteSuggestions(preferredCategoryId, 50);
             mainHandler.post(() -> {
-                field.setAdapter(new ArrayAdapter<>(this,
-                        android.R.layout.simple_dropdown_item_1line, suggestions));
+                field.setAdapter(new NoteSuggestionAdapter(suggestions));
             });
         });
+    }
+
+    private final class NoteSuggestionAdapter extends ArrayAdapter<String> {
+        NoteSuggestionAdapter(List<String> suggestions) {
+            super(MainActivity.this, android.R.layout.simple_dropdown_item_1line, suggestions);
+        }
+
+        @Override public View getView(int position, View convertView, ViewGroup parent) {
+            return suggestionRow(position, convertView);
+        }
+
+        @Override public View getDropDownView(int position, View convertView, ViewGroup parent) {
+            return suggestionRow(position, convertView);
+        }
+
+        private View suggestionRow(int position, View convertView) {
+            TextView label = convertView instanceof TextView
+                    ? (TextView) convertView
+                    : new TextView(MainActivity.this);
+            label.setText(getItem(position));
+            label.setTextSize(15);
+            label.setTextColor(INK);
+            label.setBackgroundColor(SURFACE);
+            label.setGravity(Gravity.CENTER_VERTICAL);
+            label.setSingleLine(true);
+            label.setMinHeight(dp(48));
+            label.setPadding(dp(14), 0, dp(14), 0);
+            return label;
+        }
     }
 
     AlertDialog showCategoryDialog() {

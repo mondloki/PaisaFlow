@@ -14,6 +14,7 @@ final class DonutChartView extends View {
     private int muted = 0xFF667085;
     private int empty = 0xFFE3E7E0;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF bounds = new RectF();
     private final ArrayList<LedgerModels.CategoryTotal> totals = new ArrayList<>();
     private String caption = "EXPENSES";
 
@@ -38,7 +39,7 @@ final class DonutChartView extends View {
         float size = Math.min(getWidth(), getHeight()) - dp(24);
         float left = (getWidth() - size) / 2f;
         float top = (getHeight() - size) / 2f;
-        RectF bounds = new RectF(left, top, left + size, top + size);
+        bounds.set(left, top, left + size, top + size);
         float stroke = size * 0.19f;
         bounds.inset(stroke / 2f, stroke / 2f);
         long total = 0;

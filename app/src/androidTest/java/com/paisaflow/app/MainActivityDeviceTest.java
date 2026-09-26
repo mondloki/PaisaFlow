@@ -222,6 +222,31 @@ public final class MainActivityDeviceTest {
         }
     }
 
+    @Test public void themeTogglePreservesBreakdownMode() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                findText(root, "Breakdown").performClick();
+                assertTrue(findFirstView(root, DonutChartView.class).isShown());
+                assertFalse(findText(root, "⌕  Search").isShown());
+
+                View toggle;
+                try {
+                    toggle = findContentDescription(root, "Switch to dark mode");
+                } catch (AssertionError ignored) {
+                    toggle = findContentDescription(root, "Switch to light mode");
+                }
+                toggle.performClick();
+            });
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                assertTrue(findFirstView(root, DonutChartView.class).isShown());
+                assertFalse(findText(root, "⌕  Search").isShown());
+            });
+        }
+    }
+
     private static TextView findText(View root, String expected) {
         if (root instanceof TextView && expected.contentEquals(((TextView) root).getText())) return (TextView) root;
         if (root instanceof ViewGroup) {
@@ -244,6 +269,21 @@ public final class MainActivityDeviceTest {
             }
         }
         throw new AssertionError("Missing confirmation field");
+    }
+
+    private static View findFirstView(View root, Class<? extends View> type) {
+        if (type.isInstance(root)) return root;
+        if (root instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) root;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                try {
+                    return findFirstView(group.getChildAt(i), type);
+                } catch (AssertionError ignored) {
+                    // Continue searching sibling views.
+                }
+            }
+        }
+        throw new AssertionError("Missing view: " + type.getSimpleName());
     }
 
     private static EditText findEditTextOrNull(View root) {

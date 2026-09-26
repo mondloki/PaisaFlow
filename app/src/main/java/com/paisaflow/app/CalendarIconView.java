@@ -9,6 +9,7 @@ import android.view.View;
 final class CalendarIconView extends View {
     private static final int EMERALD = 0xFF0F9D78;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF bounds = new RectF();
 
     CalendarIconView(Context context) {
         super(context);
@@ -24,8 +25,8 @@ final class CalendarIconView extends View {
         float left = (getWidth() - 24f * scale) / 2f;
         float top = (getHeight() - 24f * scale) / 2f;
         paint.setStrokeWidth(2f * scale);
-        canvas.drawRoundRect(new RectF(left, top + 3f * scale, left + 24f * scale,
-                top + 24f * scale), 3f * scale, 3f * scale, paint);
+        bounds.set(left, top + 3f * scale, left + 24f * scale, top + 24f * scale);
+        canvas.drawRoundRect(bounds, 3f * scale, 3f * scale, paint);
         canvas.drawLine(left, top + 10f * scale, left + 24f * scale, top + 10f * scale, paint);
         canvas.drawLine(left + 6f * scale, top, left + 6f * scale, top + 7f * scale, paint);
         canvas.drawLine(left + 18f * scale, top, left + 18f * scale, top + 7f * scale, paint);
