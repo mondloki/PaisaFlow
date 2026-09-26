@@ -28,4 +28,12 @@ final class Money {
     static String inputValue(long minor) {
         return BigDecimal.valueOf(minor, 2).stripTrailingZeros().toPlainString();
     }
+
+    static String formatRounded(long minor) {
+        NumberFormat format = NumberFormat.getCurrencyInstance(INDIA);
+        format.setCurrency(Currency.getInstance("INR"));
+        format.setMinimumFractionDigits(0);
+        format.setMaximumFractionDigits(0);
+        return format.format(BigDecimal.valueOf(minor, 2).setScale(0, RoundingMode.HALF_UP));
+    }
 }

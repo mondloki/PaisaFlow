@@ -111,7 +111,7 @@ public final class MainActivityDeviceTest {
                 View root = exportDialog.get().getWindow().getDecorView();
                 assertVisibleText(root, "Transactions only");
                 assertVisibleText(root, "Full data");
-                assertTrue(hasVisibleTextContaining(root, "selected dashboard date range"));
+                assertTrue(hasVisibleTextContaining(root, "every transaction"));
                 findText(root, "Full data").performClick();
                 assertTrue(hasVisibleTextContaining(root, "password-encrypted"));
                 exportDialog.get().dismiss();
@@ -189,20 +189,35 @@ public final class MainActivityDeviceTest {
             scenario.onActivity(activity -> {
                 View root = dialogReference.get().getWindow().getDecorView();
                 assertVisibleText(root, "Expense");
-                assertVisibleText(root, "Credit Card Bill");
+                assertVisibleText(root, "Select category");
                 findText(root, "Investment").performClick();
             });
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             scenario.onActivity(activity -> {
                 View root = dialogReference.get().getWindow().getDecorView();
-                assertVisibleText(root, "Bonds");
+                assertVisibleText(root, "Select category");
                 findText(root, "Credit").performClick();
             });
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             scenario.onActivity(activity -> {
                 View root = dialogReference.get().getWindow().getDecorView();
-                assertVisibleText(root, "Bond Interest");
+                assertVisibleText(root, "Select category");
                 dialogReference.get().dismiss();
+            });
+        }
+    }
+
+    @Test public void themeToggleIsAvailableInTheHeader() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                View toggle;
+                try {
+                    toggle = findContentDescription(root, "Switch to dark mode");
+                } catch (AssertionError ignored) {
+                    toggle = findContentDescription(root, "Switch to light mode");
+                }
+                assertTrue(toggle.isShown());
             });
         }
     }

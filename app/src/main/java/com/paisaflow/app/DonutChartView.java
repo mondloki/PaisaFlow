@@ -10,13 +10,21 @@ import java.util.ArrayList;
 import java.util.List;
 
 final class DonutChartView extends View {
-    private static final int INK = 0xFF0B1220;
-    private static final int MUTED = 0xFF667085;
+    private int ink = 0xFF0B1220;
+    private int muted = 0xFF667085;
+    private int empty = 0xFFE3E7E0;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final ArrayList<LedgerModels.CategoryTotal> totals = new ArrayList<>();
     private String caption = "EXPENSES";
 
     DonutChartView(Context context) { super(context); }
+
+    void setDarkMode(boolean dark) {
+        ink = dark ? 0xFFF2F5F9 : 0xFF0B1220;
+        muted = dark ? 0xFFA5AFBF : 0xFF667085;
+        empty = dark ? 0xFF303B4B : 0xFFE3E7E0;
+        invalidate();
+    }
 
     void setData(List<LedgerModels.CategoryTotal> data, String caption) {
         totals.clear();
@@ -40,7 +48,7 @@ final class DonutChartView extends View {
         paint.setStrokeWidth(stroke);
         paint.setStrokeCap(Paint.Cap.BUTT);
         if (total == 0) {
-            paint.setColor(0xFFE3E7E0);
+            paint.setColor(empty);
             canvas.drawArc(bounds, -90, 360, false, paint);
         } else {
             float start = -90f;
@@ -55,13 +63,13 @@ final class DonutChartView extends View {
 
         paint.setStyle(Paint.Style.FILL);
         paint.setTextAlign(Paint.Align.CENTER);
-        paint.setColor(MUTED);
+        paint.setColor(muted);
         paint.setTextSize(dp(10));
         paint.setFakeBoldText(true);
         float centerX = getWidth() / 2f;
         float centerY = getHeight() / 2f;
         canvas.drawText(caption, centerX, centerY - dp(7), paint);
-        paint.setColor(INK);
+        paint.setColor(ink);
         paint.setTextSize(dp(18));
         canvas.drawText(Money.format(total), centerX, centerY + dp(17), paint);
         paint.setFakeBoldText(false);

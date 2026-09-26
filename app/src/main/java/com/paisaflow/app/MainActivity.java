@@ -38,6 +38,7 @@ import android.window.OnBackInvokedCallback;
 import android.window.OnBackInvokedDispatcher;
 import android.widget.ArrayAdapter;
 import android.widget.AdapterView;
+import android.widget.AutoCompleteTextView;
 import android.widget.BaseAdapter;
 import android.widget.Button;
 import android.widget.DatePicker;
@@ -73,11 +74,17 @@ public final class MainActivity extends Activity {
     private static final int TRANSACTION_IMPORT_REQUEST = 45;
     private static final int DEVICE_CREDENTIAL_REQUEST = 46;
     private static final long APP_LOCK_TIMEOUT_MILLIS = 60_000L;
-    private static final int INK = 0xFF0B1220;
-    private static final int INK_SOFT = 0xFF172033;
-    private static final int PAPER = 0xFFF6F7F2;
+    private static final int HEADER = 0xFF0B1220;
+    private int INK;
+    private int INK_SOFT;
+    private int PAPER;
+    private int SURFACE;
+    private int BORDER;
+    private int FIELD;
+    private int CONTROL;
+    private int DIVIDER;
     private static final int EMERALD = 0xFF20C997;
-    private static final int MUTED = 0xFF667085;
+    private int MUTED;
     private static final int DANGER = 0xFFE85D68;
     private static final int AMBER = 0xFFF4B740;
     private static final int WHITE = Color.WHITE;
@@ -118,6 +125,11 @@ public final class MainActivity extends Activity {
     private final List<Button> flowButtons = new ArrayList<>();
     private String breakdownFlow = LedgerModels.EXPENSE;
     private boolean categoryMode;
+    private boolean darkMode;
+    private Long searchCategoryId;
+    private String searchNote = "";
+    private Long searchAmountMinor;
+    private Button searchButton;
     private boolean hasOpeningBalance;
     private long openingBalanceMinor;
     private boolean openingPromptChecked;
@@ -139,12 +151,16 @@ public final class MainActivity extends Activity {
     private CancellationSignal authenticationCancellation;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
+        SharedPreferences startupPreferences = getSharedPreferences("display", MODE_PRIVATE);
+        darkMode = startupPreferences.getBoolean("dark_mode", false);
+        setTheme(darkMode ? R.style.Theme_PaisaFlow_Dark : R.style.Theme_PaisaFlow);
         super.onCreate(savedInstanceState);
+        applyPalette();
         Window window = getWindow();
-        window.setStatusBarColor(INK);
-        window.setNavigationBarColor(INK);
+        window.setStatusBarColor(HEADER);
+        window.setNavigationBarColor(HEADER);
         database = new LedgerDatabase(getApplicationContext());
-        preferences = getSharedPreferences("display", MODE_PRIVATE);
+        preferences = startupPreferences;
         appLockEnabled = preferences.getBoolean("app_lock_enabled", false);
         appAuthenticated = !appLockEnabled;
         restoreDateSelection();
@@ -189,9 +205,49 @@ public final class MainActivity extends Activity {
         super.onPause();
     }
 
+    private void applyPalette() {
+        if (darkMode) {
+            INK = 0xFFF2F5F9;
+            INK_SOFT = 0xFF31405A;
+            PAPER = 0xFF0F151E;
+            SURFACE = 0xFF18212D;
+            BORDER = 0xFF303B4B;
+            FIELD = 0xFF202A37;
+            CONTROL = 0xFF273241;
+            DIVIDER = 0xFF2B3543;
+            MUTED = 0xFFA5AFBF;
+        } else {
+            INK = 0xFF0B1220;
+            INK_SOFT = 0xFF172033;
+            PAPER = 0xFFF6F7F2;
+            SURFACE = 0xFFFFFFFF;
+            BORDER = 0xFFE8EAE4;
+            FIELD = 0xFFF0F2ED;
+            CONTROL = 0xFFE4E8E1;
+            DIVIDER = 0xFFDDE1D9;
+            MUTED = 0xFF667085;
+        }
+    }
+
+    private void toggleTheme() {
+        darkMode = !darkMode;
+        preferences.edit().putBoolean("dark_mode", darkMode).apply();
+        setTheme(darkMode ? R.style.Theme_PaisaFlow_Dark : R.style.Theme_PaisaFlow);
+        applyPalette();
+        Window window = getWindow();
+        window.setStatusBarColor(HEADER);
+        window.setNavigationBarColor(HEADER);
+        String screen = activeScreen;
+        setContentView(buildScreen());
+        if (!"dashboard".equals(screen)) showScreen(screen);
+        if (appLockEnabled && !appAuthenticated) showLockOverlay();
+        else hideLockOverlay();
+        reload();
+    }
+
     private View buildScreen() {
         FrameLayout shell = new FrameLayout(this);
-        shell.setBackgroundColor(INK);
+        shell.setBackgroundColor(HEADER);
         shell.setOnApplyWindowInsetsListener((view, insets) -> {
             // Android 15 draws apps edge-to-edge. Keep every screen and the
             // navigation drawer outside status, cutout, and navigation areas.
@@ -204,7 +260,7 @@ public final class MainActivity extends Activity {
         LinearLayout header = row(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(dp(12), dp(8), dp(14), dp(8));
-        header.setBackgroundColor(INK);
+        header.setBackgroundColor(HEADER);
         Button menuButton = new Button(this);
         menuButton.setText("☰");
         menuButton.setTextSize(22);
@@ -215,13 +271,23 @@ public final class MainActivity extends Activity {
         menuButton.setContentDescription("Open navigation menu");
         menuButton.setOnClickListener(v -> openDrawer());
         header.addView(menuButton, size(dp(44), dp(44)));
-        TextView mark = text("₹", 20, INK, Typeface.BOLD);
+        TextView mark = text("₹", 20, HEADER, Typeface.BOLD);
         mark.setGravity(Gravity.CENTER);
         mark.setBackground(roundRect(EMERALD, dp(12)));
         header.addView(mark, size(dp(40), dp(40)));
         headerTitle = text("Dashboard", 20, WHITE, Typeface.BOLD);
         headerTitle.setPadding(dp(12), 0, 0, 0);
         header.addView(headerTitle, weighted());
+        Button themeButton = new Button(this);
+        themeButton.setText(darkMode ? "☀" : "☾");
+        themeButton.setTextSize(21);
+        themeButton.setTextColor(WHITE);
+        themeButton.setAllCaps(false);
+        themeButton.setPadding(0, 0, 0, 0);
+        themeButton.setBackgroundColor(Color.TRANSPARENT);
+        themeButton.setContentDescription(darkMode ? "Switch to light mode" : "Switch to dark mode");
+        themeButton.setOnClickListener(v -> toggleTheme());
+        header.addView(themeButton, size(dp(44), dp(44)));
         root.addView(header, new LinearLayout.LayoutParams(-1, dp(64)));
 
         screenHost = new FrameLayout(this);
@@ -235,7 +301,7 @@ public final class MainActivity extends Activity {
 
         LinearLayout cashCard = column(this);
         cashCard.setPadding(dp(18), dp(13), dp(18), dp(13));
-        cashCard.setBackground(roundRect(INK_SOFT, dp(17)));
+        cashCard.setBackground(roundRect(darkMode ? 0xFF1B2635 : INK_SOFT, dp(17)));
         cashCard.setOnClickListener(v -> showOpeningBalanceDialog(false));
         cashCard.addView(text("AVAILABLE CASH", 10, 0xFF9BA6B8, Typeface.BOLD));
         availableValue = text("₹0", 28, EMERALD, Typeface.BOLD);
@@ -252,7 +318,7 @@ public final class MainActivity extends Activity {
 
         LinearLayout modeRow = row(this);
         modeRow.setPadding(dp(2), dp(2), dp(2), dp(2));
-        modeRow.setBackground(roundRect(0xFFE4E8E1, dp(13)));
+        modeRow.setBackground(roundRect(CONTROL, dp(13)));
         summaryModeButton = modeButton("Summary", false);
         categoryModeButton = modeButton("Breakdown", true);
         modeRow.addView(summaryModeButton, new LinearLayout.LayoutParams(0, dp(32), 1f));
@@ -307,6 +373,7 @@ public final class MainActivity extends Activity {
         addFlowButton(flowRow, "Credits", LedgerModels.CREDIT);
         donutPanel.addView(flowRow, new LinearLayout.LayoutParams(-1, dp(43)));
         donutChart = new DonutChartView(this);
+        donutChart.setDarkMode(darkMode);
         donutPanel.addView(donutChart, new LinearLayout.LayoutParams(-1, dp(190)));
         content.addView(donutPanel, matchWrap());
 
@@ -315,8 +382,8 @@ public final class MainActivity extends Activity {
         listTitle.setPadding(dp(18), dp(18), dp(18), dp(10));
         transactionHeading = text("Transactions", 17, INK, Typeface.BOLD);
         listTitle.addView(transactionHeading, weighted());
-        TextView hint = text("Hold to delete", 11, MUTED, Typeface.NORMAL);
-        listTitle.addView(hint);
+        searchButton = compactSearchButton();
+        listTitle.addView(searchButton, size(dp(86), dp(36)));
         dashboard.addView(listTitle, matchWrap());
 
         FrameLayout listFrame = new FrameLayout(this);
@@ -329,10 +396,9 @@ public final class MainActivity extends Activity {
         entryAdapter = new EntryAdapter(this);
         categoryTotalAdapter = new CategoryTotalAdapter(this);
         listView.setAdapter(entryAdapter);
-        listView.setOnItemLongClickListener((parent, view, position, id) -> {
-            if (categoryMode) return false;
-            confirmDelete(entryAdapter.getItem(position));
-            return true;
+        listView.setOnItemClickListener((parent, view, position, id) -> {
+            if (categoryMode) showCategoryTransactions(categoryTotalAdapter.getItem(position).category);
+            else showEditTransaction(entryAdapter.getItem(position));
         });
         listFrame.addView(listView, frameMatch());
 
@@ -367,8 +433,8 @@ public final class MainActivity extends Activity {
         LinearLayout overlay = column(this);
         overlay.setGravity(Gravity.CENTER);
         overlay.setPadding(dp(30), dp(30), dp(30), dp(30));
-        overlay.setBackgroundColor(INK);
-        TextView mark = text("₹", 30, INK, Typeface.BOLD);
+        overlay.setBackgroundColor(HEADER);
+        TextView mark = text("₹", 30, HEADER, Typeface.BOLD);
         mark.setGravity(Gravity.CENTER);
         mark.setBackground(roundRect(EMERALD, dp(18)));
         overlay.addView(mark, size(dp(64), dp(64)));
@@ -424,12 +490,12 @@ public final class MainActivity extends Activity {
 
         LinearLayout panel = column(this);
         panel.setPadding(dp(16), dp(24), dp(16), dp(16));
-        panel.setBackgroundColor(WHITE);
+        panel.setBackgroundColor(SURFACE);
         panel.setOnClickListener(v -> { });
 
         LinearLayout brand = row(this);
         brand.setGravity(Gravity.CENTER_VERTICAL);
-        TextView mark = text("₹", 20, INK, Typeface.BOLD);
+        TextView mark = text("₹", 20, HEADER, Typeface.BOLD);
         mark.setGravity(Gravity.CENTER);
         mark.setBackground(roundRect(EMERALD, dp(12)));
         brand.addView(mark, size(dp(42), dp(42)));
@@ -873,7 +939,7 @@ public final class MainActivity extends Activity {
         item.addView(chevron, wrap());
         parent.addView(item, new LinearLayout.LayoutParams(-1, dp(58)));
         View divider = new View(this);
-        divider.setBackgroundColor(0xFFDDE1D9);
+        divider.setBackgroundColor(DIVIDER);
         LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(-1, dp(1));
         dividerParams.setMargins(dp(56), 0, 0, 0);
         parent.addView(divider, dividerParams);
@@ -928,6 +994,7 @@ public final class MainActivity extends Activity {
         summaryPanel.setVisibility(categoryMode ? View.GONE : View.VISIBLE);
         donutPanel.setVisibility(categoryMode ? View.VISIBLE : View.GONE);
         listView.setAdapter(categoryMode ? categoryTotalAdapter : entryAdapter);
+        if (searchButton != null) searchButton.setVisibility(categoryMode ? View.GONE : View.VISIBLE);
         updateModeAppearance();
         reload();
     }
@@ -979,7 +1046,7 @@ public final class MainActivity extends Activity {
             boolean selected = breakdownFlow.equals(button.getTag());
             button.setTextColor(selected ? WHITE : INK_SOFT);
             button.setTypeface(Typeface.DEFAULT, selected ? Typeface.BOLD : Typeface.NORMAL);
-            button.setBackground(roundRect(selected ? flowAccent(breakdownFlow) : 0xFFE8EBE5, dp(16)));
+            button.setBackground(roundRect(selected ? flowAccent(breakdownFlow) : CONTROL, dp(16)));
         }
     }
 
@@ -992,7 +1059,7 @@ public final class MainActivity extends Activity {
     private SummaryRow addSummaryRow(LinearLayout parent, String label, int accent) {
         LinearLayout card = column(this);
         card.setPadding(dp(13), dp(9), dp(13), dp(9));
-        card.setBackground(roundRect(WHITE, dp(14), 0xFFE8EAE4, dp(1)));
+        card.setBackground(roundRect(SURFACE, dp(14), BORDER, dp(1)));
         LinearLayout values = row(this);
         values.setGravity(Gravity.CENTER_VERTICAL);
         View dot = new View(this);
@@ -1069,19 +1136,28 @@ public final class MainActivity extends Activity {
         final int start = dateWindow.start;
         final int end = dateWindow.end;
         final String requestedFlow = breakdownFlow;
+        final Long requestedCategory = searchCategoryId;
+        final String requestedNote = searchNote;
+        final Long requestedAmount = searchAmountMinor;
         databaseExecutor.execute(() -> {
             List<LedgerModels.Category> loadedCategories = database.categories();
             LedgerModels.Snapshot snapshot = database.snapshot(start, end, 250);
+            if (requestedCategory != null || !requestedNote.isEmpty() || requestedAmount != null) {
+                List<LedgerModels.Entry> filtered = database.searchEntries(
+                        start, end, requestedCategory, requestedNote, requestedAmount, 10_000);
+                snapshot = new LedgerModels.Snapshot(snapshot.summary, filtered, snapshot.availableCash);
+            }
             List<LedgerModels.CategoryTotal> totals = database.categoryTotals(start, end, requestedFlow);
             boolean loadedHasOpening = database.hasOpeningBalance();
             long loadedOpening = database.openingBalance();
             boolean promptHandled = database.openingPromptHandled();
+            LedgerModels.Snapshot renderedSnapshot = snapshot;
             mainHandler.post(() -> {
                 categories = loadedCategories;
                 if (categoryManagementAdapter != null) categoryManagementAdapter.replace(loadedCategories);
                 hasOpeningBalance = loadedHasOpening;
                 openingBalanceMinor = loadedOpening;
-                render(snapshot, totals, requestedFlow);
+                render(renderedSnapshot, totals, requestedFlow);
                 if (!openingPromptChecked) {
                     openingPromptChecked = true;
                     if (!promptHandled) showOpeningBalanceDialog(true);
@@ -1111,10 +1187,100 @@ public final class MainActivity extends Activity {
                     + " transactions in this period");
             emptyView.setVisibility(categoryTotalAdapter.getCount() == 0 ? View.VISIBLE : View.GONE);
         } else {
-            transactionHeading.setText("Transactions  ·  " + snapshot.summary.count);
-            emptyView.setText("No transactions in this period\nTap Add transaction to begin");
+            transactionHeading.setText((hasTransactionSearch() ? "Search results" : "Transactions")
+                    + "  ·  " + (hasTransactionSearch() ? snapshot.entries.size() : snapshot.summary.count));
+            emptyView.setText(hasTransactionSearch()
+                    ? "No transactions match these filters"
+                    : "No transactions in this period\nTap Add transaction to begin");
             emptyView.setVisibility(snapshot.entries.isEmpty() ? View.VISIBLE : View.GONE);
         }
+        updateSearchButton();
+    }
+
+    private boolean hasTransactionSearch() {
+        return searchCategoryId != null || !searchNote.isEmpty() || searchAmountMinor != null;
+    }
+
+    private Button compactSearchButton() {
+        Button button = new Button(this);
+        button.setText("⌕  Search");
+        button.setTextSize(12);
+        button.setAllCaps(false);
+        button.setPadding(dp(8), 0, dp(8), 0);
+        button.setOnClickListener(v -> showTransactionSearch());
+        updateSearchButton(button);
+        return button;
+    }
+
+    private void updateSearchButton() {
+        if (searchButton != null) updateSearchButton(searchButton);
+    }
+
+    private void updateSearchButton(Button button) {
+        boolean active = hasTransactionSearch();
+        button.setText(active ? "Filters  •" : "⌕  Search");
+        button.setTextColor(active ? WHITE : INK);
+        button.setBackground(roundRect(active ? EMERALD : SURFACE, dp(12), BORDER, dp(1)));
+    }
+
+    private void showTransactionSearch() {
+        LinearLayout form = dialogForm();
+        form.addView(formLabel("CATEGORY"), matchWrap());
+        ArrayList<String> names = new ArrayList<>();
+        ArrayList<Long> ids = new ArrayList<>();
+        names.add("All categories");
+        ids.add(null);
+        int selected = 0;
+        for (LedgerModels.Category category : categories) {
+            names.add(category.name);
+            ids.add(category.id);
+            if (searchCategoryId != null && searchCategoryId == category.id) selected = names.size() - 1;
+        }
+        Spinner category = spinner();
+        category.setAdapter(new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_dropdown_item, names));
+        category.setSelection(selected);
+        form.addView(category, fieldParams());
+
+        AutoCompleteTextView note = noteField("Optional note contains");
+        note.setText(searchNote);
+        form.addView(note, fieldParams());
+        loadNoteSuggestions(note, null);
+
+        EditText amount = field("Exact amount (₹)");
+        amount.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        if (searchAmountMinor != null) amount.setText(Money.inputValue(searchAmountMinor));
+        form.addView(amount, fieldParams());
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Search transactions")
+                .setView(form)
+                .setNegativeButton("Cancel", null)
+                .setNeutralButton("Clear", null)
+                .setPositiveButton("Apply", null)
+                .create();
+        dialog.setOnShowListener(ignored -> {
+            dialog.getButton(DialogInterface.BUTTON_NEUTRAL).setOnClickListener(v -> {
+                searchCategoryId = null;
+                searchNote = "";
+                searchAmountMinor = null;
+                dialog.dismiss();
+                reload();
+            });
+            dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(v -> {
+                try {
+                    searchCategoryId = ids.get(category.getSelectedItemPosition());
+                    searchNote = note.getText().toString().trim();
+                    String amountText = amount.getText().toString().trim();
+                    searchAmountMinor = amountText.isEmpty() ? null : Money.parseMinor(amountText);
+                    dialog.dismiss();
+                    reload();
+                } catch (IllegalArgumentException error) {
+                    amount.setError(error.getMessage());
+                }
+            });
+        });
+        dialog.show();
     }
 
     private void showOpeningBalanceDialog(boolean firstPrompt) {
@@ -1174,7 +1340,7 @@ public final class MainActivity extends Activity {
         String[] flowLabels = {"Expense", "Investment", "Credit"};
         LinearLayout typeSelector = row(this);
         typeSelector.setPadding(dp(3), dp(3), dp(3), dp(3));
-        typeSelector.setBackground(roundRect(0xFFE4E8E1, dp(12)));
+        typeSelector.setBackground(roundRect(CONTROL, dp(12)));
 
         CategoryOptionAdapter categoryAdapter = new CategoryOptionAdapter();
         Spinner categorySpinner = spinner();
@@ -1214,9 +1380,15 @@ public final class MainActivity extends Activity {
         }));
         form.addView(dateButton, fieldParams());
 
-        EditText note = field("Optional note");
-        note.setSingleLine(true);
+        AutoCompleteTextView note = noteField("Optional note");
         form.addView(note, fieldParams());
+        categorySpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                LedgerModels.Category selected = categoryAdapter.getItem(position);
+                loadNoteSuggestions(note, selected == null ? null : selected.id);
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) { }
+        });
 
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("Add transaction")
@@ -1235,6 +1407,11 @@ public final class MainActivity extends Activity {
                 try {
                     long minor = Money.parseMinor(amount.getText().toString());
                     LedgerModels.Category category = (LedgerModels.Category) categorySpinner.getSelectedItem();
+                    if (category == null) {
+                        Toast.makeText(this, "Select a category", Toast.LENGTH_SHORT).show();
+                        categorySpinner.requestFocus();
+                        return;
+                    }
                     saveEntry(dialog, minor, selectedDate[0], category, note.getText().toString());
                 } catch (Exception error) {
                     amount.setError(error.getMessage() == null ? "Check the amount" : error.getMessage());
@@ -1273,6 +1450,30 @@ public final class MainActivity extends Activity {
             } catch (RuntimeException error) {
                 mainHandler.post(() -> Toast.makeText(this, "Could not save transaction", Toast.LENGTH_LONG).show());
             }
+        });
+    }
+
+    private AutoCompleteTextView noteField(String hint) {
+        AutoCompleteTextView field = new AutoCompleteTextView(this);
+        field.setHint(hint);
+        field.setTextSize(16);
+        field.setTextColor(INK);
+        field.setHintTextColor(MUTED);
+        field.setSingleLine(true);
+        field.setThreshold(0);
+        field.setPadding(dp(12), 0, dp(12), 0);
+        field.setBackground(roundRect(FIELD, dp(10), BORDER, dp(1)));
+        field.setOnClickListener(v -> field.showDropDown());
+        return field;
+    }
+
+    private void loadNoteSuggestions(AutoCompleteTextView field, Long preferredCategoryId) {
+        databaseExecutor.execute(() -> {
+            List<String> suggestions = database.noteSuggestions(preferredCategoryId, 50);
+            mainHandler.post(() -> {
+                field.setAdapter(new ArrayAdapter<>(this,
+                        android.R.layout.simple_dropdown_item_1line, suggestions));
+            });
         });
     }
 
@@ -1316,7 +1517,7 @@ public final class MainActivity extends Activity {
         LinearLayout preview = row(this);
         preview.setGravity(Gravity.CENTER_VERTICAL);
         preview.setPadding(dp(10), dp(7), dp(10), dp(7));
-        preview.setBackground(roundRect(0xFFF0F2ED, dp(10), 0xFFDDE1D9, dp(1)));
+        preview.setBackground(roundRect(FIELD, dp(10), BORDER, dp(1)));
         CategoryIconView previewIcon = new CategoryIconView(this);
         previewIcon.setContentDescription("Selected category icon preview");
         preview.addView(previewIcon, size(dp(38), dp(38)));
@@ -1537,6 +1738,199 @@ public final class MainActivity extends Activity {
                 })).show();
     }
 
+    private void showCategoryTransactions(LedgerModels.Category category) {
+        LinearLayout content = column(this);
+        TextView period = text(dateWindow.label + "  ·  Newest first", 12, MUTED, Typeface.NORMAL);
+        period.setPadding(dp(20), dp(4), dp(20), dp(8));
+        content.addView(period, matchWrap());
+        ListView transactions = new ListView(this);
+        transactions.setDivider(null);
+        transactions.setDividerHeight(0);
+        transactions.setPadding(dp(12), 0, dp(12), dp(8));
+        EntryAdapter adapter = new EntryAdapter(this);
+        transactions.setAdapter(adapter);
+        content.addView(transactions, new LinearLayout.LayoutParams(-1, dp(470)));
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(category.name)
+                .setView(content)
+                .setNegativeButton("Close", null)
+                .create();
+        transactions.setOnItemClickListener((parent, view, position, id) -> {
+            LedgerModels.Entry entry = adapter.getItem(position);
+            dialog.dismiss();
+            showEditTransaction(entry);
+        });
+        dialog.show();
+        final int start = dateWindow.start;
+        final int end = dateWindow.end;
+        databaseExecutor.execute(() -> {
+            List<LedgerModels.Entry> entries = database.entriesForCategory(start, end, category.id);
+            mainHandler.post(() -> {
+                if (!dialog.isShowing()) return;
+                adapter.replace(entries);
+                dialog.setTitle(category.name + "  ·  " + entries.size());
+            });
+        });
+    }
+
+    private void showEditTransaction(LedgerModels.Entry entry) {
+        LinearLayout form = dialogForm();
+        EditText amount = field("Amount (₹)");
+        amount.setInputType(InputType.TYPE_CLASS_TEXT);
+        amount.setText(Money.inputValue(entry.amountMinor));
+        form.addView(amount, fieldParams());
+        addCalculator(form, amount);
+
+        form.addView(formLabel("TYPE"), matchWrap());
+        String[] selectedFlow = {entry.category.flow};
+        String[] flowValues = {LedgerModels.EXPENSE, LedgerModels.INVESTMENT, LedgerModels.CREDIT};
+        String[] flowLabels = {"Expense", "Investment", "Credit"};
+        LinearLayout typeSelector = row(this);
+        typeSelector.setPadding(dp(3), dp(3), dp(3), dp(3));
+        typeSelector.setBackground(roundRect(CONTROL, dp(12)));
+        CategoryOptionAdapter categoryAdapter = new CategoryOptionAdapter();
+        Spinner categorySpinner = spinner();
+        categorySpinner.setAdapter(categoryAdapter);
+        List<Button> typeButtons = new ArrayList<>();
+        for (int i = 0; i < flowValues.length; i++) {
+            final int index = i;
+            Button button = new Button(this);
+            button.setText(flowLabels[i]);
+            button.setTextSize(13);
+            button.setAllCaps(false);
+            button.setPadding(dp(4), 0, dp(4), 0);
+            button.setMinHeight(0);
+            button.setMinimumHeight(0);
+            button.setOnClickListener(v -> {
+                selectedFlow[0] = flowValues[index];
+                categoryAdapter.replace(categoriesForFlow(selectedFlow[0]));
+                categorySpinner.setSelection(0);
+                for (int position = 0; position < typeButtons.size(); position++) {
+                    styleTransactionTypeButton(typeButtons.get(position), position == index);
+                }
+            });
+            typeButtons.add(button);
+            typeSelector.addView(button, new LinearLayout.LayoutParams(0, dp(38), 1f));
+        }
+        List<LedgerModels.Category> initialCategories = categoriesForFlow(entry.category.flow);
+        categoryAdapter.replace(initialCategories);
+        int initialSelection = 0;
+        for (int i = 0; i < initialCategories.size(); i++) {
+            if (initialCategories.get(i).id == entry.category.id) initialSelection = i + 1;
+        }
+        categorySpinner.setSelection(initialSelection);
+        for (int i = 0; i < typeButtons.size(); i++) {
+            styleTransactionTypeButton(typeButtons.get(i), flowValues[i].equals(entry.category.flow));
+        }
+        form.addView(typeSelector, new LinearLayout.LayoutParams(-1, dp(44)));
+        form.addView(formLabel("CATEGORY"), matchWrap());
+        form.addView(categorySpinner, new LinearLayout.LayoutParams(-1, dp(52)));
+
+        final int[] selectedDate = {entry.dateKey};
+        Button dateButton = formButton(DateRanges.format(selectedDate[0]));
+        dateButton.setOnClickListener(v -> pickDate(selectedDate[0], key -> {
+            selectedDate[0] = key;
+            dateButton.setText(DateRanges.format(key));
+        }));
+        form.addView(dateButton, fieldParams());
+
+        AutoCompleteTextView note = noteField("Optional note");
+        note.setText(entry.note);
+        form.addView(note, fieldParams());
+        categorySpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                LedgerModels.Category selected = categoryAdapter.getItem(position);
+                loadNoteSuggestions(note, selected == null ? null : selected.id);
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) { }
+        });
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("Edit transaction")
+                .setView(form)
+                .setNegativeButton("Cancel", null)
+                .setNeutralButton("Delete", null)
+                .setPositiveButton("Save", null)
+                .create();
+        dialog.setOnShowListener(ignored -> {
+            Button delete = dialog.getButton(DialogInterface.BUTTON_NEUTRAL);
+            delete.setTextColor(DANGER);
+            delete.setOnClickListener(v -> {
+                dialog.dismiss();
+                confirmDelete(entry);
+            });
+            dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(v -> {
+                try {
+                    long minor = Money.parseMinor(SimpleCalculator.evaluate(amount.getText().toString()));
+                    LedgerModels.Category category = categoryAdapter.getItem(categorySpinner.getSelectedItemPosition());
+                    if (category == null) {
+                        Toast.makeText(this, "Select a category", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+                    databaseExecutor.execute(() -> {
+                        try {
+                            database.updateEntry(entry.id, minor, selectedDate[0], category.id,
+                                    category.flow, note.getText().toString());
+                            mainHandler.post(() -> {
+                                dialog.dismiss();
+                                Toast.makeText(this, "Transaction updated", Toast.LENGTH_SHORT).show();
+                                reload();
+                            });
+                        } catch (RuntimeException error) {
+                            mainHandler.post(() -> Toast.makeText(this,
+                                    "Could not update transaction", Toast.LENGTH_LONG).show());
+                        }
+                    });
+                } catch (IllegalArgumentException error) {
+                    amount.setError(error.getMessage());
+                }
+            });
+        });
+        dialog.show();
+    }
+
+    private void addCalculator(LinearLayout form, EditText amount) {
+        form.addView(formLabel("CALCULATOR"), matchWrap());
+        String[][] keys = {{"7", "8", "9", "÷"}, {"4", "5", "6", "×"},
+                {"1", "2", "3", "−"}, {"C", "0", ".", "+"}, {"⌫", "="}};
+        for (String[] rowKeys : keys) {
+            LinearLayout row = row(this);
+            for (String key : rowKeys) {
+                Button button = new Button(this);
+                button.setText(key);
+                button.setTextSize(15);
+                button.setTextColor(INK);
+                button.setAllCaps(false);
+                button.setMinHeight(0);
+                button.setMinimumHeight(0);
+                button.setPadding(0, 0, 0, 0);
+                button.setBackground(roundRect(FIELD, dp(8), BORDER, dp(1)));
+                button.setOnClickListener(v -> applyCalculatorKey(amount, key));
+                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(36), 1f);
+                params.setMargins(dp(2), dp(2), dp(2), dp(2));
+                row.addView(button, params);
+            }
+            form.addView(row, new LinearLayout.LayoutParams(-1, dp(40)));
+        }
+    }
+
+    private void applyCalculatorKey(EditText amount, String key) {
+        String current = amount.getText().toString();
+        if ("C".equals(key)) amount.setText("");
+        else if ("⌫".equals(key)) {
+            if (!current.isEmpty()) amount.setText(current.substring(0, current.length() - 1));
+        } else if ("=".equals(key)) {
+            try {
+                amount.setText(SimpleCalculator.evaluate(current));
+                amount.setSelection(amount.length());
+            } catch (IllegalArgumentException error) {
+                amount.setError(error.getMessage());
+            }
+        } else {
+            amount.append(key);
+        }
+    }
+
     AlertDialog showExportOptions() {
         return showDataScopeDialog(DataAction.EXPORT);
     }
@@ -1614,7 +2008,7 @@ public final class MainActivity extends Activity {
         if (action == DataAction.EXPORT) {
             return fullData
                     ? "Exports categories, transactions, and opening balance as a password-encrypted PaisaFlow backup."
-                    : "Exports transactions from the selected dashboard date range as a readable CSV file.";
+                    : "Exports every transaction as a readable CSV file, regardless of the selected dashboard date range.";
         }
         if (action == DataAction.IMPORT) {
             return fullData
@@ -1703,7 +2097,7 @@ public final class MainActivity extends Activity {
         Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("text/csv");
-        intent.putExtra(Intent.EXTRA_TITLE, "paisaflow-" + dateWindow.start + "-" + dateWindow.end + ".csv");
+        intent.putExtra(Intent.EXTRA_TITLE, ExportNames.transactions(DateRanges.todayKey()));
         startActivityForResult(intent, EXPORT_REQUEST);
     }
 
@@ -1745,14 +2139,11 @@ public final class MainActivity extends Activity {
     }
 
     private void writeCsv(Uri destination) {
-        final int start = dateWindow.start;
-        final int end = dateWindow.end;
         databaseExecutor.execute(() -> {
             try (OutputStream stream = getContentResolver().openOutputStream(destination);
                  OutputStreamWriter writer = new OutputStreamWriter(stream, StandardCharsets.UTF_8)) {
                 if (stream == null) throw new IllegalStateException("Could not open destination");
-                LedgerModels.Snapshot export = database.snapshot(start, end, 1_000_000);
-                writer.write(TransactionCsv.create(export.entries));
+                writer.write(TransactionCsv.create(database.allEntries()));
                 writer.flush();
                 mainHandler.post(() -> Toast.makeText(this, "CSV exported", Toast.LENGTH_SHORT).show());
             } catch (Exception error) {
@@ -1970,7 +2361,9 @@ public final class MainActivity extends Activity {
         field.setTextSize(16);
         field.setSingleLine(true);
         field.setPadding(dp(12), 0, dp(12), 0);
-        field.setBackground(roundRect(0xFFF0F2ED, dp(10), 0xFFDDE1D9, dp(1)));
+        field.setTextColor(INK);
+        field.setHintTextColor(MUTED);
+        field.setBackground(roundRect(FIELD, dp(10), BORDER, dp(1)));
         return field;
     }
 
@@ -1983,7 +2376,7 @@ public final class MainActivity extends Activity {
     private Spinner spinner() {
         Spinner spinner = new Spinner(this);
         spinner.setPadding(dp(7), 0, dp(7), 0);
-        spinner.setBackground(roundRect(0xFFF0F2ED, dp(10), 0xFFDDE1D9, dp(1)));
+        spinner.setBackground(roundRect(FIELD, dp(10), BORDER, dp(1)));
         return spinner;
     }
 
@@ -1995,7 +2388,7 @@ public final class MainActivity extends Activity {
         button.setAllCaps(false);
         button.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
         button.setPadding(dp(12), 0, dp(12), 0);
-        button.setBackground(roundRect(0xFFF0F2ED, dp(10), 0xFFDDE1D9, dp(1)));
+        button.setBackground(roundRect(FIELD, dp(10), BORDER, dp(1)));
         return button;
     }
 
@@ -2086,7 +2479,7 @@ public final class MainActivity extends Activity {
                 LinearLayout card = row(context);
                 card.setGravity(Gravity.CENTER_VERTICAL);
                 card.setPadding(dp(12), dp(9), dp(12), dp(9));
-                card.setBackground(roundRect(WHITE, dp(14), 0xFFE8EAE4, dp(1)));
+                card.setBackground(roundRect(SURFACE, dp(14), BORDER, dp(1)));
 
                 CategoryIconView icon = new CategoryIconView(context);
                 card.addView(icon, size(dp(42), dp(42)));
@@ -2157,7 +2550,7 @@ public final class MainActivity extends Activity {
                 LinearLayout card = row(context);
                 card.setGravity(Gravity.CENTER_VERTICAL);
                 card.setPadding(dp(12), dp(9), dp(12), dp(9));
-                card.setBackground(roundRect(WHITE, dp(14), 0xFFE8EAE4, dp(1)));
+                card.setBackground(roundRect(SURFACE, dp(14), BORDER, dp(1)));
                 CategoryIconView icon = new CategoryIconView(context);
                 card.addView(icon, size(dp(42), dp(42)));
                 TextView name = text("Category", 15, INK, Typeface.BOLD);
@@ -2165,7 +2558,7 @@ public final class MainActivity extends Activity {
                 card.addView(name, weighted());
                 LinearLayout right = column(context);
                 right.setGravity(Gravity.END);
-                TextView amount = text("₹0", 15, INK, Typeface.BOLD);
+                TextView amount = text("₹0", 13, INK, Typeface.BOLD);
                 TextView percentage = text("0%", 11, MUTED, Typeface.NORMAL);
                 amount.setGravity(Gravity.END);
                 percentage.setGravity(Gravity.END);
@@ -2182,9 +2575,9 @@ public final class MainActivity extends Activity {
             holder.icon.setIcon(item.category.icon, item.category.color);
             holder.icon.setContentDescription(item.category.name + " icon");
             holder.name.setText(item.category.name);
-            holder.amount.setText(Money.format(item.amountMinor));
+            holder.amount.setText(Money.formatRounded(item.amountMinor));
             double percent = grandTotal == 0 ? 0 : item.amountMinor * 100.0 / grandTotal;
-            holder.percentage.setText(String.format(java.util.Locale.getDefault(), "%.1f%%", percent));
+            holder.percentage.setText(String.format(java.util.Locale.getDefault(), "%.0f%%", percent));
             recycled.setLayoutParams(new android.widget.AbsListView.LayoutParams(-1, dp(70)));
             return recycled;
         }
@@ -2195,13 +2588,17 @@ public final class MainActivity extends Activity {
 
         void replace(List<LedgerModels.Category> replacement) {
             items.clear();
+            items.add(null);
             items.addAll(replacement);
             notifyDataSetChanged();
         }
 
         @Override public int getCount() { return items.size(); }
         @Override public LedgerModels.Category getItem(int position) { return items.get(position); }
-        @Override public long getItemId(int position) { return getItem(position).id; }
+        @Override public long getItemId(int position) {
+            LedgerModels.Category category = getItem(position);
+            return category == null ? 0 : category.id;
+        }
         @Override public View getView(int position, View recycled, ViewGroup parent) {
             return optionView(position, recycled);
         }
@@ -2227,9 +2624,17 @@ public final class MainActivity extends Activity {
                 holder = (IconOptionHolder) recycled.getTag();
             }
             LedgerModels.Category category = getItem(position);
-            holder.icon.setIcon(category.icon, category.color);
-            holder.icon.setContentDescription(category.name + " category icon");
-            holder.label.setText(category.name);
+            if (category == null) {
+                holder.icon.setIcon("dots", MUTED);
+                holder.icon.setContentDescription("No category selected");
+                holder.label.setText("Select category");
+                holder.label.setTypeface(Typeface.DEFAULT, Typeface.NORMAL);
+            } else {
+                holder.icon.setIcon(category.icon, category.color);
+                holder.icon.setContentDescription(category.name + " category icon");
+                holder.label.setText(category.name);
+                holder.label.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            }
             recycled.setMinimumHeight(dp(50));
             return recycled;
         }
@@ -2257,7 +2662,7 @@ public final class MainActivity extends Activity {
                 LinearLayout card = row(context);
                 card.setGravity(Gravity.CENTER_VERTICAL);
                 card.setPadding(dp(12), dp(9), dp(12), dp(9));
-                card.setBackground(roundRect(WHITE, dp(14), 0xFFE8EAE4, dp(1)));
+                card.setBackground(roundRect(SURFACE, dp(14), BORDER, dp(1)));
                 CategoryIconView icon = new CategoryIconView(context);
                 card.addView(icon, size(dp(42), dp(42)));
                 LinearLayout copy = column(context);

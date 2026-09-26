@@ -151,6 +151,38 @@ public final class LedgerDatabaseDeviceTest {
         assertNotNull(find(database.categories(), "Food"));
     }
 
+    @Test public void searchAndEditPreserveExistingTransactionIdentityAndOtherData() {
+        database = new LedgerDatabase(context);
+        LedgerModels.Category food = find(database.categories(), "Food");
+        LedgerModels.Category grocery = find(database.categories(), "Grocery");
+        LedgerModels.Category salary = find(database.categories(), "Salary");
+        database.setOpeningBalance(25_000_00L);
+        long editedId = database.addEntry(
+                125_50L, 20260901, food.id, LedgerModels.EXPENSE, "Weekly market");
+        database.addEntry(50_000_00L, 20260831, salary.id, LedgerModels.CREDIT, "August salary");
+
+        assertEquals(1, database.searchEntries(
+                20260101, 20261231, food.id, "market", 125_50L, 100).size());
+        database.updateEntry(editedId, 140_25L, 20260902, grocery.id,
+                LedgerModels.EXPENSE, "Weekly groceries");
+        long olderId = database.addEntry(
+                90_00L, 20260801, grocery.id, LedgerModels.EXPENSE, "Older groceries");
+
+        List<LedgerModels.Entry> edited = database.searchEntries(
+                20260101, 20261231, grocery.id, "grocer", 140_25L, 100);
+        assertEquals(1, edited.size());
+        assertEquals(editedId, edited.get(0).id);
+        assertEquals("Weekly groceries", edited.get(0).note);
+        List<LedgerModels.Entry> categoryEntries = database.entriesForCategory(
+                20260101, 20261231, grocery.id);
+        assertEquals(2, categoryEntries.size());
+        assertEquals(editedId, categoryEntries.get(0).id);
+        assertEquals(olderId, categoryEntries.get(1).id);
+        assertEquals(3, database.allEntries().size());
+        assertEquals(25_000_00L, database.openingBalance());
+        assertTrue(database.noteSuggestions(grocery.id, 10).contains("Weekly groceries"));
+    }
+
     private void createVersionTwoDatabase() {
         File path = context.getDatabasePath(DATABASE_NAME);
         File parent = path.getParentFile();

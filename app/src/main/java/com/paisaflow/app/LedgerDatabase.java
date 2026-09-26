@@ -179,6 +179,18 @@ final class LedgerDatabase extends SQLiteOpenHelper {
         return getWritableDatabase().insertOrThrow("entries", null, values);
     }
 
+    void updateEntry(long id, long amountMinor, int dateKey, long categoryId, String flow, String note) {
+        ContentValues values = new ContentValues(5);
+        values.put("amount_minor", amountMinor);
+        values.put("date_key", dateKey);
+        values.put("category_id", categoryId);
+        values.put("flow", flow);
+        values.put("note", note == null ? "" : note.trim());
+        int changed = getWritableDatabase().update(
+                "entries", values, "id=?", new String[]{Long.toString(id)});
+        if (changed != 1) throw new IllegalArgumentException("Transaction not found");
+    }
+
     List<String> missingTransactionCategories(List<TransactionCsv.Row> rows) {
         Map<String, ImportCategory> available = importCategories(getReadableDatabase());
         LinkedHashMap<String, String> missing = new LinkedHashMap<>();
@@ -312,6 +324,73 @@ final class LedgerDatabase extends SQLiteOpenHelper {
             }
         }
         return new LedgerModels.Snapshot(summary, entries, availableCash(DateRanges.todayKey()));
+    }
+
+    List<LedgerModels.Entry> searchEntries(
+            int start, int end, Long categoryId, String note, Long amountMinor, int limit) {
+        ArrayList<String> clauses = new ArrayList<>();
+        ArrayList<String> arguments = new ArrayList<>();
+        clauses.add("e.date_key BETWEEN ? AND ?");
+        arguments.add(Integer.toString(start));
+        arguments.add(Integer.toString(end));
+        if (categoryId != null) {
+            clauses.add("e.category_id=?");
+            arguments.add(Long.toString(categoryId));
+        }
+        String trimmedNote = note == null ? "" : note.trim();
+        if (!trimmedNote.isEmpty()) {
+            clauses.add("e.note LIKE ? ESCAPE '\\'");
+            arguments.add("%" + escapeLike(trimmedNote) + "%");
+        }
+        if (amountMinor != null) {
+            clauses.add("e.amount_minor=?");
+            arguments.add(Long.toString(amountMinor));
+        }
+        String sql = "SELECT e.id,e.amount_minor,e.date_key,e.note," +
+                "c.id,c.name,e.flow,c.icon,c.color,c.standard " +
+                "FROM entries e JOIN categories c ON c.id=e.category_id WHERE " +
+                android.text.TextUtils.join(" AND ", clauses) +
+                " ORDER BY e.date_key DESC,e.created_at DESC LIMIT " + Math.max(1, limit);
+        return readEntries(sql, arguments.toArray(new String[0]));
+    }
+
+    List<LedgerModels.Entry> entriesForCategory(int start, int end, long categoryId) {
+        return searchEntries(start, end, categoryId, null, null, Integer.MAX_VALUE);
+    }
+
+    List<LedgerModels.Entry> allEntries() {
+        return searchEntries(0, 99991231, null, null, null, Integer.MAX_VALUE);
+    }
+
+    List<String> noteSuggestions(Long preferredCategoryId, int limit) {
+        ArrayList<String> notes = new ArrayList<>();
+        String preferred = preferredCategoryId == null ? "0" : Long.toString(preferredCategoryId);
+        String sql = "SELECT note,MAX(created_at) latest," +
+                "MAX(CASE WHEN category_id=? THEN 1 ELSE 0 END) preferred " +
+                "FROM entries WHERE TRIM(note)<>'' GROUP BY note COLLATE NOCASE " +
+                "ORDER BY preferred DESC,latest DESC LIMIT " + Math.max(1, limit);
+        try (Cursor cursor = getReadableDatabase().rawQuery(sql, new String[]{preferred})) {
+            while (cursor.moveToNext()) notes.add(cursor.getString(0));
+        }
+        return notes;
+    }
+
+    private static String escapeLike(String value) {
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    }
+
+    private List<LedgerModels.Entry> readEntries(String sql, String[] args) {
+        ArrayList<LedgerModels.Entry> entries = new ArrayList<>();
+        try (Cursor cursor = getReadableDatabase().rawQuery(sql, args)) {
+            while (cursor.moveToNext()) {
+                LedgerModels.Category category = new LedgerModels.Category(
+                        cursor.getLong(4), cursor.getString(5), cursor.getString(6), cursor.getString(7),
+                        cursor.getInt(8), cursor.getInt(9) == 1);
+                entries.add(new LedgerModels.Entry(cursor.getLong(0), cursor.getLong(1),
+                        cursor.getInt(2), cursor.getString(3), category));
+            }
+        }
+        return entries;
     }
 
     List<LedgerModels.CategoryTotal> categoryTotals(int start, int end, String flow) {
