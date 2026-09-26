@@ -1352,6 +1352,7 @@ public final class MainActivity extends Activity {
         CategoryOptionAdapter categoryAdapter = new CategoryOptionAdapter();
         Spinner categorySpinner = spinner();
         categorySpinner.setAdapter(categoryAdapter);
+        Runnable[] updateSaveState = {() -> { }};
         List<Button> typeButtons = new ArrayList<>();
         for (int i = 0; i < flowValues.length; i++) {
             final int index = i;
@@ -1365,9 +1366,11 @@ public final class MainActivity extends Activity {
             button.setOnClickListener(v -> {
                 selectedFlow[0] = flowValues[index];
                 categoryAdapter.replace(categoriesForFlow(selectedFlow[0]));
+                categorySpinner.setSelection(0);
                 for (int position = 0; position < typeButtons.size(); position++) {
                     styleTransactionTypeButton(typeButtons.get(position), position == index);
                 }
+                updateSaveState[0].run();
             });
             typeButtons.add(button);
             typeSelector.addView(button, new LinearLayout.LayoutParams(0, dp(40), 1f));
@@ -1393,6 +1396,7 @@ public final class MainActivity extends Activity {
             @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 LedgerModels.Category selected = categoryAdapter.getItem(position);
                 loadNoteSuggestions(note, selected == null ? null : selected.id);
+                updateSaveState[0].run();
             }
             @Override public void onNothingSelected(AdapterView<?> parent) { }
         });
@@ -1405,12 +1409,33 @@ public final class MainActivity extends Activity {
                 .setPositiveButton("Save", null)
                 .create();
         dialog.setOnShowListener(ignored -> {
+            Button save = dialog.getButton(DialogInterface.BUTTON_POSITIVE);
+            int actionColor = dialog.getButton(DialogInterface.BUTTON_NEGATIVE).getCurrentTextColor();
+            updateSaveState[0] = () -> {
+                boolean validAmount;
+                try {
+                    Money.parseMinor(amount.getText().toString());
+                    validAmount = true;
+                } catch (IllegalArgumentException error) {
+                    validAmount = false;
+                }
+                boolean valid = validAmount && categorySpinner.getSelectedItem() != null;
+                save.setEnabled(valid);
+                save.setTextColor(valid ? actionColor : MUTED);
+            };
+            amount.addTextChangedListener(new TextWatcher() {
+                @Override public void beforeTextChanged(CharSequence value, int start, int count, int after) { }
+                @Override public void onTextChanged(CharSequence value, int start, int before, int count) {
+                    updateSaveState[0].run();
+                }
+                @Override public void afterTextChanged(Editable value) { }
+            });
+            updateSaveState[0].run();
             dialog.getButton(DialogInterface.BUTTON_NEUTRAL).setOnClickListener(v -> {
                 dialog.dismiss();
                 showCategoryDialog(selectedFlow[0]);
             });
-            dialog.getButton(DialogInterface.BUTTON_POSITIVE).setTextColor(0xFF087D5F);
-            dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(v -> {
+            save.setOnClickListener(v -> {
                 try {
                     long minor = Money.parseMinor(amount.getText().toString());
                     LedgerModels.Category category = (LedgerModels.Category) categorySpinner.getSelectedItem();

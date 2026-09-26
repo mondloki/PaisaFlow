@@ -1,6 +1,7 @@
 package com.paisaflow.app;
 
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -11,6 +12,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
+import android.widget.Spinner;
 import android.widget.TextView;
 
 import androidx.test.core.app.ActivityScenario;
@@ -190,12 +192,28 @@ public final class MainActivityDeviceTest {
                 View root = dialogReference.get().getWindow().getDecorView();
                 assertVisibleText(root, "Expense");
                 assertVisibleText(root, "Select category");
+                assertFalse(dialogReference.get().getButton(
+                        android.content.DialogInterface.BUTTON_POSITIVE).isEnabled());
+                findEditText(root).setText("125.50");
+                findSpinner(root).setSelection(1);
+            });
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            scenario.onActivity(activity -> {
+                AlertDialog dialog = dialogReference.get();
+                assertTrue(dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).isEnabled());
+                assertEquals(dialog.getButton(android.content.DialogInterface.BUTTON_NEGATIVE).getCurrentTextColor(),
+                        dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).getCurrentTextColor());
+                assertEquals(dialog.getButton(android.content.DialogInterface.BUTTON_NEUTRAL).getCurrentTextColor(),
+                        dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).getCurrentTextColor());
+                View root = dialog.getWindow().getDecorView();
                 findText(root, "Investment").performClick();
             });
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
             scenario.onActivity(activity -> {
                 View root = dialogReference.get().getWindow().getDecorView();
                 assertVisibleText(root, "Select category");
+                assertFalse(dialogReference.get().getButton(
+                        android.content.DialogInterface.BUTTON_POSITIVE).isEnabled());
                 findText(root, "Credit").performClick();
             });
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
@@ -269,6 +287,21 @@ public final class MainActivityDeviceTest {
             }
         }
         throw new AssertionError("Missing confirmation field");
+    }
+
+    private static Spinner findSpinner(View root) {
+        if (root instanceof Spinner) return (Spinner) root;
+        if (root instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) root;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                try {
+                    return findSpinner(group.getChildAt(i));
+                } catch (AssertionError ignored) {
+                    // Continue searching sibling views.
+                }
+            }
+        }
+        throw new AssertionError("Missing category spinner");
     }
 
     private static View findFirstView(View root, Class<? extends View> type) {
